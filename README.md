@@ -23,7 +23,7 @@ Apply the provided patch to your firefox source.  You should be able to add logg
     }
 ```
 
-Logged messages are serialized to binary blobs living in /tmp/firefox/firefoxN.bin (on Linux) or C:\Users\%USERNAME%\Temp\firefox\firefoxN.bin (on Windows).  These blobs can be squashed together into human-readable text using the aggregate tool built via:
+Logged messages are serialized to binary blobs living in `/tmp/firefox/firefoxN.bin` (on Linux) or `C:\Users\%USERNAME%\Temp\firefox\firefoxN.bin` (on Windows).  These blobs can be squashed together into human-readable text using the aggregate tool built via:
 
 ```
     # build linux aggregate tool
@@ -52,3 +52,9 @@ Each of those pieces of information can optionally removed using various switche
 ```
 
 aggregate will print stdout if an output file is not specified.
+
+## Caveats
+
+- Aggregator must be built for 32-bit as it makes use of x86 code-generation to invoke snprintf with the serialized args in the generated bin files.
+- Wide strings (wchar_t) are different sized on different platforms.  Therefore, any binary logs containing wide strings must be converted using the aggregator binary for the same platform.
+- Pointer arguments are also specific to the architecture, don't printf("%p") in 64-bit firefox and expect it to work in the 32-bit aggregator.
