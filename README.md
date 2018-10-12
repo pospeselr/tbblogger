@@ -6,7 +6,7 @@ Minimal offline logger for Firefox.  Logging calls are serialized at runtime to 
 
 Apply the provided patch to your firefox source.  You should be able to add logging functionality anywhere via:
 
-{{{
+```
     ...
     #include <mozilla/TbbLogger.h
     ...
@@ -21,26 +21,26 @@ Apply the provided patch to your firefox source.  You should be able to add logg
         TBB_LOG("This is some logging %i %f", some_int, some_double);  
         ...
     }
-}}}
+```
 
 Logged messages are serialized to binary blobs living in /tmp/firefox/firefoxN.bin (on Linux) or C:\Users\%USERNAME%\Temp\firefox\firefoxN.bin (on Windows).  These blobs can be squashed together into human-readable text using the aggregate tool built via:
 
-{{{
+```
     # build linux aggregate tool
     make aggregate
     # build windows aggregate tool (requires mingw)
     make win_aggregate
-}}}
+```
 
 The default output format for each log entry is:
 
-{{{
+```
     [$TIME_SINCE_FIRST_LOG_IN_SECONDS][$FIREFOX_PROCESS][$THREAD_ID] $FUNCTION_NAME in $FILENAME:$LINENUMBER $MESSAGE
-}}}
+```
 
 Each of those pieces of information can optionally removed using various switches on aggregate tool.   See aggregate --help:
 
-{{{
+```
     Usage: aggregate [OPTION]... [FILE]... -o output.log
     Options:
      --help                 Print this help message
@@ -49,6 +49,6 @@ Each of those pieces of information can optionally removed using various switche
      --hide-childid         Do not print log entry's child id
      --hide-threadid        Do not print log entry's thread id
      --hide-logsite         Do not print log entry's log site
-}}}
+```
 
 aggregate will print stdout if an output file is not specified.
