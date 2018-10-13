@@ -4,11 +4,11 @@ Minimal offline logger for Firefox.  Logging calls are serialized at runtime to 
 
 ## Usage
 
-Apply the provided patch to your firefox source.  You should be able to add logging functionality anywhere via:
+Apply TbbLogger.patch to your firefox source.  You should be able to add logging functionality by including the  TbbLogger.h header:
 
 ```
     ...
-    #include <mozilla/TbbLogger.h
+    #include "TbbLogger.h"
     ...
     void function_name()
     {
