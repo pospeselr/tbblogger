@@ -440,6 +440,7 @@ namespace tbb
                     remaining_messages -= messages_written;
                     total_messages_written += messages_written;
                 }
+                fflush(log_file);
             }
 
             // flush to disk
