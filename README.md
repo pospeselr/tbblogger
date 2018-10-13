@@ -53,6 +53,20 @@ Each of those pieces of information can optionally removed using various switche
 
 aggregate will print stdout if an output file is not specified.
 
+# Example
+
+`./aggregate /tmp/firefox/*.bin --filename-offset=19 --hide-threadid`
+
+```
+[0.000000][Parent] XRE_main in /tor-browser/toolkit/xre/nsAppRunner.cpp:5605 
+[0.000068][Parent] XRE_main in /tor-browser/toolkit/xre/nsAppRunner.cpp:5387 
+[0.094594][Parent] XRE_mainRun in /tor-browser/toolkit/xre/nsAppRunner.cpp:5005 
+[3.693950][Child1] ContentChild in /tor-browser/dom/ipc/ContentChild.cpp:539 
+[4.696942][Child2] ContentChild in /tor-browser/dom/ipc/ContentChild.cpp:539 
+[14.708473][Child3] ContentChild in /tor-browser/dom/ipc/ContentChild.cpp:539 
+[16.287610][Child4] ContentChild in /tor-browser/dom/ipc/ContentChild.cpp:539
+```
+
 ## Caveats
 
 - Aggregator must be built for 32-bit as it makes use of x86 code-generation to invoke snprintf with the serialized args in the generated bin files.
