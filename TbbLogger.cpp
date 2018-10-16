@@ -141,12 +141,20 @@ namespace tbb
         /// Size Params
         size_t param_size_impl(const char* str)
         {
-            return sizeof(char) * strlen(str) + sizeof(char) + sizeof(data_type);
+            if (str) {
+                return sizeof(char) * strlen(str) + sizeof(char) + sizeof(data_type);
+            } else {
+                return param_size("(nil)");
+            }
         }
 
         size_t param_size_impl(const wchar_t* str)
         {
-            return sizeof(wchar_t) * wcslen(str) + sizeof(wchar_t) + sizeof(data_type);
+            if (str) {
+                return sizeof(wchar_t) * wcslen(str) + sizeof(wchar_t) + sizeof(data_type);
+            } else {
+                return param_size(L"(nil)");
+            }
         }
 
         size_t param_size(char str[])
@@ -160,95 +168,114 @@ namespace tbb
         }
 
         /// Pack Params
-        uint8_t* pack_param(uint8_t* dest) { return dest; }
-        uint8_t* pack_param(uint8_t* dest, const char* str)
+        uint8_t* pack_param_impl(uint8_t* dest, const char* str)
         {
-            *dest++ = (uint8_t)data_type::ascii_string;
-            while((*dest++ = *str++));
-            return dest;
+            if (str) {
+                *dest++ = (uint8_t)data_type::ascii_string;
+                while((*dest++ = *str++));
+                return dest;
+            } else {
+                return pack_param_impl(dest, "(nil)");
+            }
         }
-        uint8_t* pack_param(uint8_t* dest, const wchar_t* str)
+        uint8_t* pack_param_impl(uint8_t* dest, char str[])
         {
-            *dest++ = (uint8_t)data_type::wide_string;
-            wchar_t* str_dest = reinterpret_cast<wchar_t*>(dest);
-            while((*str_dest++ = *str++));
-            return reinterpret_cast<uint8_t*>(str_dest);
+            return pack_param_impl(dest, (const char*)str);
         }
-        uint8_t* pack_param(uint8_t* dest, void* ptr)
+        uint8_t* pack_param_impl(uint8_t* dest, const wchar_t* str)
+        {
+            if (str) {
+                *dest++ = (uint8_t)data_type::wide_string;
+                wchar_t* str_dest = reinterpret_cast<wchar_t*>(dest);
+                while((*str_dest++ = *str++));
+                return reinterpret_cast<uint8_t*>(str_dest);
+            } else {
+                return pack_param_impl(dest, L"(nil)");
+            }
+        }
+        uint8_t* pack_param_impl(uint8_t* dest, wchar_t str[])
+        {
+            return pack_param_impl(dest, (const wchar_t*)str);
+        }
+        uint8_t* pack_param_impl(uint8_t* dest, const void* ptr)
         {
             constexpr size_t N = sizeof(void*);
             *dest++ = (uint8_t)(data_type::pointer);
             memcpy(dest, &ptr, N);
             return dest + N;
         }
-        uint8_t* pack_param(uint8_t* dest, std::nullptr_t)
+        uint8_t* pack_param_impl(uint8_t* dest, void* ptr)
         {
-            return pack_param(dest, (void*)nullptr);
+            return pack_param_impl(dest, (const void*)ptr);
         }
-        uint8_t* pack_param(uint8_t* dest, int8_t val)
+        uint8_t* pack_param_impl(uint8_t* dest, std::nullptr_t)
+        {
+            return pack_param_impl(dest, (void*)nullptr);
+        }
+        uint8_t* pack_param_impl(uint8_t* dest, int8_t val)
         {
             constexpr size_t N = sizeof(int8_t);
             *dest++ = (uint8_t)(data_type::i8);
             memcpy(dest, &val, N);
             return dest + N;
         }
-        uint8_t* pack_param(uint8_t* dest, uint8_t val)
+        uint8_t* pack_param_impl(uint8_t* dest, uint8_t val)
         {
             constexpr size_t N = sizeof(uint8_t);
             *dest++ = (uint8_t)(data_type::u8);
             memcpy(dest, &val, N);
             return dest + N;
         }
-        uint8_t* pack_param(uint8_t* dest, int16_t val)
+        uint8_t* pack_param_impl(uint8_t* dest, int16_t val)
         {
            constexpr size_t N = sizeof(int16_t);
             *dest++ = (uint8_t)(data_type::i16);
             memcpy(dest, &val, N);
             return dest + N;
         }
-        uint8_t* pack_param(uint8_t* dest, uint16_t val)
+        uint8_t* pack_param_impl(uint8_t* dest, uint16_t val)
         {
             constexpr size_t N = sizeof(uint16_t);
             *dest++ = (uint8_t)(data_type::u16);
             memcpy(dest, &val, N);
             return dest + N;
         }
-        uint8_t* pack_param(uint8_t* dest, int32_t val)
+        uint8_t* pack_param_impl(uint8_t* dest, int32_t val)
         {
             constexpr size_t N = sizeof(int32_t);
             *dest++ = (uint8_t)(data_type::i32);
             memcpy(dest, &val, N);
             return dest + N;
         }
-        uint8_t* pack_param(uint8_t* dest, uint32_t val)
+        uint8_t* pack_param_impl(uint8_t* dest, uint32_t val)
         {
             constexpr size_t N = sizeof(uint32_t);
             *dest++ = (uint8_t)(data_type::u32);
             memcpy(dest, &val, N);
             return dest + N;
         }
-        uint8_t* pack_param(uint8_t* dest, int64_t val)
+        uint8_t* pack_param_impl(uint8_t* dest, int64_t val)
         {
             constexpr size_t N = sizeof(int64_t);
             *dest++ = (uint8_t)(data_type::i64);
             memcpy(dest, &val, N);
             return dest + N;
         }
-        uint8_t* pack_param(uint8_t* dest, uint64_t val)
+        uint8_t* pack_param_impl(uint8_t* dest, uint64_t val)
         {
             constexpr size_t N = sizeof(uint64_t);
             *dest++ = (uint8_t)(data_type::u64);
             memcpy(dest, &val, N);
             return dest + N;
         }
-        uint8_t* pack_param(uint8_t* dest, float val)
+        uint8_t* pack_param_impl(uint8_t* dest, float val)
         {
             constexpr size_t N = sizeof(float);
             *dest++ = (uint8_t)(data_type::f32);
             memcpy(dest, &val, N);
             return dest + N;
         }
-        uint8_t* pack_param(uint8_t* dest, double val)
+        uint8_t* pack_param_impl(uint8_t* dest, double val)
         {
             constexpr size_t N = sizeof(double);
             *dest++ = (uint8_t)(data_type::f64);

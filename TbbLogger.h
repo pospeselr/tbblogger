@@ -78,26 +78,29 @@ namespace tbb
             return param_size(std::forward<FIRST>(first)) + param_size(std::forward<ARGS>(args)...);
         }
 
-        uint8_t* pack_param(uint8_t* dest);
-        uint8_t* pack_param(uint8_t* dest, const char* str);
-        uint8_t* pack_param(uint8_t* dest, const wchar_t* str);
-        uint8_t* pack_param(uint8_t* dest, const void* ptr);
-        uint8_t* pack_param(uint8_t* dest, std::nullptr_t);
-        uint8_t* pack_param(uint8_t* dest, int8_t val);
-        uint8_t* pack_param(uint8_t* dest, uint8_t val);
-        uint8_t* pack_param(uint8_t* dest, int16_t val);
-        uint8_t* pack_param(uint8_t* dest, uint16_t val);
-        uint8_t* pack_param(uint8_t* dest, int32_t val);
-        uint8_t* pack_param(uint8_t* dest, uint32_t val);
-        uint8_t* pack_param(uint8_t* dest, int64_t val);
-        uint8_t* pack_param(uint8_t* dest, uint64_t val);
-        uint8_t* pack_param(uint8_t* dest, float val);
-        uint8_t* pack_param(uint8_t* dest, double val);
+        uint8_t* pack_param_impl(uint8_t* dest, const char* str);
+        uint8_t* pack_param_impl(uint8_t* dest, char str[]);
+        uint8_t* pack_param_impl(uint8_t* dest, const wchar_t* str);
+        uint8_t* pack_param_impl(uint8_t* dest, wchar_t str[]);
+        uint8_t* pack_param_impl(uint8_t* dest, const void* ptr);
+        uint8_t* pack_param_impl(uint8_t* dest, void* ptr);
+        uint8_t* pack_param_impl(uint8_t* dest, std::nullptr_t);
+        uint8_t* pack_param_impl(uint8_t* dest, int8_t val);
+        uint8_t* pack_param_impl(uint8_t* dest, uint8_t val);
+        uint8_t* pack_param_impl(uint8_t* dest, int16_t val);
+        uint8_t* pack_param_impl(uint8_t* dest, uint16_t val);
+        uint8_t* pack_param_impl(uint8_t* dest, int32_t val);
+        uint8_t* pack_param_impl(uint8_t* dest, uint32_t val);
+        uint8_t* pack_param_impl(uint8_t* dest, int64_t val);
+        uint8_t* pack_param_impl(uint8_t* dest, uint64_t val);
+        uint8_t* pack_param_impl(uint8_t* dest, float val);
+        uint8_t* pack_param_impl(uint8_t* dest, double val);
 
+        inline uint8_t* pack_param(uint8_t* dest) {return dest;}
         template<typename FIRST, typename ...ARGS>
         uint8_t* pack_param(uint8_t* dest, FIRST&& first, ARGS&&... args)
         {
-            return pack_param(pack_param(dest, std::forward<FIRST>(first)), std::forward<ARGS>(args)...);
+            return pack_param(pack_param_impl(dest, std::forward<FIRST>(first)), std::forward<ARGS>(args)...);
         }
 
         #pragma pack(1)
