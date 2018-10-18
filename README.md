@@ -72,3 +72,4 @@ aggregate will print stdout if an output file is not specified.
 - Aggregator must be built for 32-bit as it makes use of x86 code-generation to invoke snprintf with the serialized args in the generated bin files.
 - Wide strings (wchar_t) are different sized on different platforms.  Therefore, any binary logs containing wide strings must be converted using the aggregator binary for the same platform.
 - Pointer arguments are also specific to the architecture, don't printf("%p") in 64-bit firefox and expect it to work in the 32-bit aggregator.
+- On Linux, `security.sadbox.content.level` must be reduced to 0
