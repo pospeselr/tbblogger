@@ -24,9 +24,18 @@ namespace tbb
     {
         enum class data_type : uint8_t
         {
+            // LEGACY
             ascii_string = 1,
             wide_string,
-            pointer,
+            pointer,            
+            // strings
+            str_utf8,
+            str_utf16,
+            str_utf32,
+            // pointers
+            p32,
+            p64,
+            // integers
             i8,
             u8,
             i16,
@@ -35,6 +44,7 @@ namespace tbb
             u32,
             i64,
             u64,
+            // floating points
             f32,
             f64,
         };
@@ -44,16 +54,24 @@ namespace tbb
 
         // string size of unknown size implementation
         size_t param_size_impl(const char* str);
+        size_t param_size_impl(const char16_t* str);
+        size_t param_size_impl(const char32_t* str);
         size_t param_size_impl(const wchar_t* str);
         // arbitatry pointer size impemetation
-        constexpr size_t param_size_impl(const void*)        { return sizeof(void*)       + sizeof(data_type); }
+        constexpr size_t param_size_impl(const void*)        { return sizeof(void*)        + sizeof(data_type); }
         // fixed string literal size
         template<size_t N>
-        constexpr size_t param_size(const char (&str)[N])    { return sizeof(char) * N    + sizeof(data_type); }
+        constexpr size_t param_size(const char (&str)[N])    { return sizeof(char)     * N + sizeof(data_type); }
         template<size_t N>
-        constexpr size_t param_size(const wchar_t (&str)[N]) { return sizeof(wchar_t) * N + sizeof(data_type); }
+        constexpr size_t param_size(const char16_t (&str)[N]){ return sizeof(char16_t) * N + sizeof(data_type); }
+        template<size_t N>
+        constexpr size_t param_size(const char32_t (&str)[N]){ return sizeof(char32_t) * N + sizeof(data_type); }                
+        template<size_t N>
+        constexpr size_t param_size(const wchar_t (&str)[N]) { return sizeof(wchar_t)  * N + sizeof(data_type); }
         // read/write string buffer size
         size_t param_size(char str[]);
+        size_t param_size(char16_t str[]);
+        size_t param_size(char32_t str[]);
         size_t param_size(wchar_t str[]);
         // catch-all template functionf or pointers
         template<typename T>
@@ -79,9 +97,13 @@ namespace tbb
         }
 
         uint8_t* pack_param_impl(uint8_t* dest, const char* str);
-        uint8_t* pack_param_impl(uint8_t* dest, char str[]);
+        uint8_t* pack_param_impl(uint8_t* dest, const char16_t* str);
+        uint8_t* pack_param_impl(uint8_t* dest, const char32_t* str);
         uint8_t* pack_param_impl(uint8_t* dest, const wchar_t* str);
+        uint8_t* pack_param_impl(uint8_t* dest, char str[]);
         uint8_t* pack_param_impl(uint8_t* dest, wchar_t str[]);
+        uint8_t* pack_param_impl(uint8_t* dest, char16_t str[]);
+        uint8_t* pack_param_impl(uint8_t* dest, char32_t str[]);
         uint8_t* pack_param_impl(uint8_t* dest, const void* ptr);
         uint8_t* pack_param_impl(uint8_t* dest, void* ptr);
         uint8_t* pack_param_impl(uint8_t* dest, std::nullptr_t);

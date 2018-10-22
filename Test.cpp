@@ -23,16 +23,17 @@ namespace tbb
 
 void __attribute__((noinline)) do_work()
 {
-    TBB_TRACE();
-    int some_int = 100;
-    double some_double = 34.0;
-    TBB_LOG("This is some logging %i %f", some_int, some_double);
-    TBB_LOG("whoa");
-    // tbb::internal::micro_sleep(rand() % 100);
-    TBB_LOG("%p", nullptr);
-    // tbb::internal::micro_sleep(rand() % 5000);
-    TBB_LOG("%f %s %S", 1.0f, "char", L"wchar");
-    // tbb::internal::micro_sleep(rand() % 1000);
+    // TBB_TRACE();
+    // int some_int = 100;
+    // double some_double = 34.0;
+    // TBB_LOG("This is some logging %i %f", some_int, some_double);
+    // TBB_LOG("whoa");
+    // // tbb::internal::micro_sleep(rand() % 100);
+    // TBB_LOG("%p", nullptr);
+    // // tbb::internal::micro_sleep(rand() % 5000);
+    // TBB_LOG("%f %s %S", 1.0f, "char", L"wchar");
+    // // tbb::internal::micro_sleep(rand() % 1000);
+    TBB_LOG("string test", u8"utf8", u"utf16", U"utf32", L"wide");
 }
 
 struct catchall_type
@@ -102,7 +103,7 @@ int main(int argc, char** argv)
 
     size_t begin = tbb::internal::get_timestamp();
     // #pragma omp parallel for
-    for(size_t k = 0; k < 100; ++k)
+    for(size_t k = 0; k < 1; ++k)
     {
         do_work();
     }

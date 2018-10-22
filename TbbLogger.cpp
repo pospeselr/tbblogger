@@ -138,70 +138,150 @@ namespace tbb
 
     namespace serialization
     {
+        #define NULL_STRING(PREFIX) PREFIX##"(nil)"
+        #define UTF8_NULLSTRING   NULL_STRING(u8)
+        #define UTF16_NULLSTRING  NULL_STRING(u)
+        #define UTF32_NULLSTRING  NULL_STRING(U)
+        #define WIDE_NULLSTRING  NULL_STRING(L)
+
+        template<typename T>
+        constexpr size_t param_size_string(const T* str)
+        {
+            const auto* head = str;
+            while(*str++ != (T)0);
+            return (str - head) * sizeof(T) + sizeof(data_type);
+        }
 
         /// Size Params
         size_t param_size_impl(const char* str)
         {
-            if (str) {
-                return sizeof(char) * strlen(str) + sizeof(char) + sizeof(data_type);
-            } else {
-                return param_size("(nil)");
+            if (!str) {
+                str = UTF8_NULLSTRING;
             }
+            return param_size_string(str);
+        }
+
+        size_t param_size_impl(const char16_t* str)
+        {
+            if (!str) {
+                str = UTF16_NULLSTRING;
+            }
+            return param_size_string(str);
+        }
+
+        size_t param_size_impl(const char32_t* str)
+        {
+            if (!str) {
+                str = UTF32_NULLSTRING;
+            }
+            return param_size_string(str);
         }
 
         size_t param_size_impl(const wchar_t* str)
         {
-            if (str) {
-                return sizeof(wchar_t) * wcslen(str) + sizeof(wchar_t) + sizeof(data_type);
-            } else {
-                return param_size(L"(nil)");
+            if (!str) {
+                str = WIDE_NULLSTRING;
             }
+            return param_size_string(str);
         }
 
         size_t param_size(char str[])
         {
             return param_size_impl(str);
         }
-
+        size_t param_size(char16_t str[])
+        {
+            return param_size_impl(str);
+        }
+        size_t param_size(char32_t str[])
+        {
+            return param_size_impl(str);
+        }
         size_t param_size(wchar_t str[])
         {
             return param_size_impl(str);
         }
 
         /// Pack Params
+        template<typename CharType>
+        uint8_t* pack_param_string(uint8_t* dest, const CharType* str)
+        {
+            static_assert((sizeof(CharType) == sizeof(char) ||
+                           sizeof(CharType) == sizeof(char16_t) ||
+                           sizeof(CharType) == sizeof(char32_t)), "Invalid character size");
+            switch(sizeof(CharType))
+            {
+                case sizeof(char):
+                    *dest++ = (uint8_t)data_type::str_utf8; break;
+                case sizeof(char16_t):
+                    *dest++ = (uint8_t)data_type::str_utf16; break;
+                case sizeof(char32_t):
+                    *dest++ = (uint8_t)data_type::str_utf32; break;
+            }
+            auto* str_dest = reinterpret_cast<CharType*>(dest);
+            while((*str_dest++ = *str++));
+            return reinterpret_cast<uint8_t*>(str_dest);
+        }
+
+        // various string overloads
         uint8_t* pack_param_impl(uint8_t* dest, const char* str)
         {
-            if (str) {
-                *dest++ = (uint8_t)data_type::ascii_string;
-                while((*dest++ = *str++));
-                return dest;
-            } else {
-                return pack_param_impl(dest, "(nil)");
+            if (!str) {
+                str = UTF8_NULLSTRING;
             }
+            return pack_param_string(dest, str);
+        }
+        uint8_t* pack_param_impl(uint8_t* dest, const char16_t* str)
+        {
+            if (!str) {
+                str = UTF16_NULLSTRING;
+            }
+            return pack_param_string(dest, str);
+        }
+        uint8_t* pack_param_impl(uint8_t* dest, const char32_t* str)
+        {
+            if (!str) {
+                str = UTF32_NULLSTRING;
+            }
+            return pack_param_string(dest, str);
+        }
+        uint8_t* pack_param_impl(uint8_t* dest, const wchar_t* str)
+        {
+            if (!str) {
+                str = WIDE_NULLSTRING;
+            }
+            return pack_param_string(dest, str);
         }
         uint8_t* pack_param_impl(uint8_t* dest, char str[])
         {
             return pack_param_impl(dest, (const char*)str);
         }
-        uint8_t* pack_param_impl(uint8_t* dest, const wchar_t* str)
+        uint8_t* pack_param_impl(uint8_t* dest, char16_t str[])
         {
-            if (str) {
-                *dest++ = (uint8_t)data_type::wide_string;
-                wchar_t* str_dest = reinterpret_cast<wchar_t*>(dest);
-                while((*str_dest++ = *str++));
-                return reinterpret_cast<uint8_t*>(str_dest);
-            } else {
-                return pack_param_impl(dest, L"(nil)");
-            }
+            return pack_param_impl(dest, (const char16_t*)str);
+        }
+        uint8_t* pack_param_impl(uint8_t* dest, char32_t str[])
+        {
+            return pack_param_impl(dest, (const char32_t*)str);
         }
         uint8_t* pack_param_impl(uint8_t* dest, wchar_t str[])
         {
             return pack_param_impl(dest, (const wchar_t*)str);
         }
+
         uint8_t* pack_param_impl(uint8_t* dest, const void* ptr)
         {
+            static_assert(sizeof(void*) == sizeof(uint32_t) ||
+                          sizeof(void*) == sizeof(uint64_t),
+                          "Invalid pointer size");
+
             constexpr size_t N = sizeof(void*);
-            *dest++ = (uint8_t)(data_type::pointer);
+            if(N == sizeof(uint32_t)) {
+                *dest++ = (uint8_t)(data_type::p32);
+            } else if(N == sizeof(uint64_t)) {
+                *dest++ = (uint8_t)(data_type::p64);
+            }
+            
             memcpy(dest, &ptr, N);
             return dest + N;
         }
