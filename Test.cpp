@@ -4,6 +4,14 @@
 #include <stdint.h>
 #include <stdlib.h>
 
+// C++
+#include <vector>
+#include <sstream>
+
+// fmt
+#include <fmt/format.h>
+#include <fmt/printf.h>
+
 namespace tbb
 {
     namespace internal
@@ -27,6 +35,65 @@ void __attribute__((noinline)) do_work()
     // tbb::internal::micro_sleep(rand() % 1000);
 }
 
+struct catchall_type
+{
+    void* data = nullptr;
+};
+
+namespace fmt {
+    template<>
+    struct formatter<catchall_type> {
+        template <typename ParseContext>
+        constexpr auto parse(ParseContext &ctx) 
+        { 
+            auto it = ctx.begin();
+            while (*it != '}') {
+                ++it;
+            }
+            std::stringstream ss;
+            ss << "{:" << std::string(ctx.begin(), it) << '}';
+            format_string = ss.str();
+            printf("format string: %s\n", format_string.data());
+            return it;
+        }
+
+        template <typename FormatContext>
+        auto format(const catchall_type &cat, FormatContext &ctx) 
+        {
+            return format_to(ctx.begin(), format_string, 0x128);
+        }
+
+        std::string format_string;
+    };
+}
+
+namespace fmt{
+    namespace v5 {
+        namespace internal {
+            template<>
+            fmt::basic_format_arg<fmt::format_context> make_arg<fmt::format_context, catchall_type>(const catchall_type& cat) {
+                fmt::basic_format_arg<fmt::format_context> retval;
+                printf("%s:%u\n", __FUNCTION__, __LINE__);
+                retval.value_ = value<fmt::format_context>(cat);
+                retval.type_ = custom_type;
+                return retval;
+            }
+        }
+    }
+}
+
+void fmt_test()
+{
+    using ctx = fmt::format_context;
+    std::vector<fmt::basic_format_arg<ctx>> args;    
+
+    catchall_type cat;
+    args.push_back(fmt::internal::make_arg<ctx, catchall_type>(cat));
+
+    auto result = fmt::vformat("hex: 0x{0:x} dec: {0:}", fmt::basic_format_args<ctx>(args.data(), (uint32_t)args.size()));
+    puts(result.data());
+}
+
 int main(int argc, char** argv)
 {
     srand(0);
@@ -40,5 +107,7 @@ int main(int argc, char** argv)
         do_work();
     }
 
-    printf("Time Logging: %f seconds\n", (double)(tbb::internal::get_timestamp() - begin) / 1000000000.0);
+    fmt::printf("Time Logging: %f seconds\n", (double)(tbb::internal::get_timestamp() - begin) / 1000000000.0);
+
+    fmt_test();
 }

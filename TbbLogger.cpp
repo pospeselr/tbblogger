@@ -10,6 +10,7 @@
 #include <atomic>
 #include <memory>
 #include <vector>
+#include <functional>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -355,7 +356,8 @@ namespace tbb
             return true;
         }
 
-        size_t visit_msgs(message_queue q, auto func)
+        // size_t visit_msgs(message_queue q, auto func)
+        size_t visit_msgs(message_queue q, std::function<void(serialization::message* msg)> func)
         {
             for(auto* msg : *q) {
                 func(msg);
