@@ -1,75 +1,68 @@
 # TbbLogger
 
-Minimal offline logger for Firefox.  Logging calls are serialized at runtime to per-process binary files, which can be aggregated together with the 'aggregate' tool.
+Minimal offline logger for Firefox using [fmtlib](http://fmtlib.net/).  Logging calls are serialized at runtime to per-process binary files, which can be aggregated together with the 'aggregate' tool.
 
 ## Usage
 
-Apply TbbLogger.patch to your firefox source.  You should be able to add logging functionality by including the  TbbLogger.h header:
+Apply TbbLogger.patch to your firefox source. You will be able to add [fmtlib](http://fmtlib.net/latest/syntax.html) logging functionality by including the TbbLogger.h header:
 
-```
-    ...
-    #include "TbbLogger.h"
-    ...
-    void function_name()
-    {
-        ...
-        // outputs : [0.000323][Parent][29958] function_name in Test.cpp:18 
-        TBB_TRACE();
-        int some_int = 100;
-        double some_double = 34.0;
-        // outputs : [0.000324][Parent][29958] function_name in Test.cpp:22 This is some logging 100 34.000000
-        TBB_LOG("This is some logging %i %f", some_int, some_double);  
-        ...
-    }
+```cpp
+...
+#include "TbbLogger.h"
+...
+void logging()
+{
+    TBB_LOG("string test: '{}' '{}' '{}' '{}'", u8"utf8", u"utf16", U"utf32", L"wide");
+    TBB_LOG("null pointer: {}", nullptr);
+    int local;
+    TBB_LOG("stack ptr: {}", &local);
+    TBB_LOG("hex : {0:#x} dec : {0} bin : {0:#032b}", 128);
+}
+...
 ```
 
 Logged messages are serialized to binary blobs living in `/tmp/firefox/firefoxN.bin` (on Linux) or `C:\Users\%USERNAME%\Temp\firefox\firefoxN.bin` (on Windows).  These blobs can be squashed together into human-readable text using the aggregate tool built via:
 
-```
-    # build linux aggregate tool
-    make aggregate
-    # build windows aggregate tool (requires mingw)
-    make win_aggregate
+```bash
+# build linux aggregate tool
+make aggregate
+# build windows aggregate tool (requires mingw)
+make win_aggregate
 ```
 
 The default output format for each log entry is:
 
-```
-    [$TIME_SINCE_FIRST_LOG_IN_SECONDS][$FIREFOX_PROCESS][$THREAD_ID] $FUNCTION_NAME in $FILENAME:$LINENUMBER $MESSAGE
+```bash
+[$FIREFOX_PROCESS][$THREAD_ID] $FUNCTION_NAME in $FILENAME:$LINENUMBER $MESSAGE
 ```
 
 Each of those pieces of information can optionally removed using various switches on aggregate tool.   See aggregate --help:
 
 ```
-    Usage: aggregate [OPTION]... [FILE]... -o output.log
-    Options:
-     --help                 Print this help message
-     --filename-offset=N    Skips first N characters when logging filename
-     --hide-timestamp       Do not print log entry's timestamp
-     --hide-childid         Do not print log entry's child id
-     --hide-threadid        Do not print log entry's thread id
-     --hide-logsite         Do not print log entry's log site
+Usage: aggregate [OPTION]... [FILE]... -o output.log
+Options:
+ --help                 Print this help message
+ --filename-offset=N    Skips first N characters when logging filename
+ --hide-timestamp       Do not print log entry's timestamp
+ --hide-childid         Do not print log entry's child id
+ --hide-threadid        Do not print log entry's thread id
+ --hide-logsite         Do not print log entry's log site
 ```
 
 aggregate will print stdout if an output file is not specified.
 
 # Example
 
-`./aggregate /tmp/firefox/*.bin --filename-offset=19 --hide-threadid`
-
 ```
-[0.000000][Parent] XRE_main in /tor-browser/toolkit/xre/nsAppRunner.cpp:5605 
-[0.000068][Parent] XRE_main in /tor-browser/toolkit/xre/nsAppRunner.cpp:5387 
-[0.094594][Parent] XRE_mainRun in /tor-browser/toolkit/xre/nsAppRunner.cpp:5005 
-[3.693950][Child1] ContentChild in /tor-browser/dom/ipc/ContentChild.cpp:539 
-[4.696942][Child2] ContentChild in /tor-browser/dom/ipc/ContentChild.cpp:539 
-[14.708473][Child3] ContentChild in /tor-browser/dom/ipc/ContentChild.cpp:539 
-[16.287610][Child4] ContentChild in /tor-browser/dom/ipc/ContentChild.cpp:539
+$ ./aggregate /tmp/firefox/*.bin --hide-threadid
+[0.000000][Parent] main in Test.cpp:32
+[0.000134][Parent] logging in Test.cpp:22 string test: 'utf8' 'utf16' 'utf32' 'wide'
+[0.000143][Parent] logging in Test.cpp:23 null pointer: 0x0000000000000000
+[0.000147][Parent] logging in Test.cpp:25 stack ptr: 0x00007ffe180ef59c
+[0.000149][Parent] logging in Test.cpp:26 hex : 0x80 dec : 128 bin : 0b00000010000000
+
 ```
 
 ## Caveats
 
-- Aggregator must be built for 32-bit as it makes use of x86 code-generation to invoke snprintf with the serialized args in the generated bin files.
-- Wide strings (wchar_t) are different sized on different platforms.  Therefore, any binary logs containing wide strings must be converted using the aggregator binary for the same platform.
-- Pointer arguments are also specific to the architecture, don't printf("%p") in 64-bit firefox and expect it to work in the 32-bit aggregator.
-- On Linux, `security.sadbox.content.level` must be reduced to 0
+- On Linux, firefox's `security.sadbox.content.level` pref must be reduced to 0
