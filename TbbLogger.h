@@ -24,10 +24,6 @@ namespace tbb
     {
         enum class data_type : uint8_t
         {
-            // LEGACY
-            ascii_string = 1,
-            wide_string,
-            pointer,            
             // strings
             str_utf8,
             str_utf16,
@@ -65,7 +61,7 @@ namespace tbb
         template<size_t N>
         constexpr size_t param_size(const char16_t (&str)[N]){ return sizeof(char16_t) * N + sizeof(data_type); }
         template<size_t N>
-        constexpr size_t param_size(const char32_t (&str)[N]){ return sizeof(char32_t) * N + sizeof(data_type); }                
+        constexpr size_t param_size(const char32_t (&str)[N]){ return sizeof(char32_t) * N + sizeof(data_type); }
         template<size_t N>
         constexpr size_t param_size(const wchar_t (&str)[N]) { return sizeof(wchar_t)  * N + sizeof(data_type); }
         // read/write string buffer size

@@ -49,7 +49,7 @@ namespace tbb
 #else
             timespec counter;
             clock_gettime(CLOCK_MONOTONIC_RAW, &counter);
-            uint64_t retval = uint64_t(counter.tv_sec) * NANOSECONDS_IN_SECOND + uint64_t(counter.tv_nsec);
+            uint64_t retval = uint64_t(counter.tv_sec) * NANOSECONDS_PER_SECOND + uint64_t(counter.tv_nsec);
             return retval;
 #endif
         }
