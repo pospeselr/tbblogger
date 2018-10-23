@@ -31,7 +31,7 @@ namespace tbb
         // timestamp in nanoseconds
         uint64_t get_timestamp()
         {
-            constexpr uint64_t NANOSECONDS_IN_SECOND = 1000000000;
+            constexpr uint64_t NANOSECONDS_PER_SECOND = 1000000000;
 #ifdef _WIN32
             static LARGE_INTEGER frequency = []()
             {
@@ -40,12 +40,12 @@ namespace tbb
                 return frequency;
             }();
 
-            LARGE_INTEGER counter;
-            QueryPerformanceCounter(&counter);
-            counter.QuadPart *= NANOSECONDS_IN_SECOND;
-            counter.QuadPart /= frequency.QuadPart;
+            LARGE_INTEGER ticks;
+            QueryPerformanceCounter(&ticks);
+            ticks.QuadPart *= NANOSECONDS_PER_SECOND;
+            ticks.QuadPart /= frequency.QuadPart;
 
-            return counter.QuadPart;
+            return ticks.QuadPart;
 #else
             timespec counter;
             clock_gettime(CLOCK_MONOTONIC_RAW, &counter);
@@ -160,7 +160,6 @@ namespace tbb
             }
             return param_size_string(str);
         }
-
         size_t param_size_impl(const char16_t* str)
         {
             if (!str) {
@@ -168,7 +167,6 @@ namespace tbb
             }
             return param_size_string(str);
         }
-
         size_t param_size_impl(const char32_t* str)
         {
             if (!str) {
@@ -176,7 +174,6 @@ namespace tbb
             }
             return param_size_string(str);
         }
-
         size_t param_size_impl(const wchar_t* str)
         {
             if (!str) {
@@ -281,7 +278,7 @@ namespace tbb
             } else if(N == sizeof(uint64_t)) {
                 *dest++ = (uint8_t)(data_type::p64);
             }
-            
+
             memcpy(dest, &ptr, N);
             return dest + N;
         }

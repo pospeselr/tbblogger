@@ -101,14 +101,16 @@ int main(int argc, char** argv)
     // omp_set_dynamic(0);
     // omp_set_num_threads(4);
 
+    constexpr double NANOSECONDS_PER_SECOND = 1000000000.0;
     size_t begin = tbb::internal::get_timestamp();
     // #pragma omp parallel for
     for(size_t k = 0; k < 1; ++k)
     {
         do_work();
     }
+    size_t end = tbb::internal::get_timestamp();
 
-    fmt::printf("Time Logging: %f seconds\n", (double)(tbb::internal::get_timestamp() - begin) / 1000000000.0);
+    fmt::printf("Time Logging: %f seconds\n", (double)(end - begin) / NANOSECONDS_PER_SECOND);
 
     fmt_test();
 }
