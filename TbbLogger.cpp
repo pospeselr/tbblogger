@@ -122,7 +122,6 @@ namespace tbb
             char filename[1024];
             char* head = filename;
             head += get_temp_path(head, sizeof(filename));
-            printf("Temp : %s\n", filename);
 #if _WIN32
             head += sprintf(head, "firefox");
             CreateDirectoryA(filename, nullptr);

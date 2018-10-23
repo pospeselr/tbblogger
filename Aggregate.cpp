@@ -303,7 +303,6 @@ namespace fmt {
                 default:
                     assert(!"Invalid data_type");
             }
-
         }
 
         std::string format_string;
@@ -426,9 +425,6 @@ void print_msg(const print_config& config, const message* msg)
     assert(fmt_params[2].type == data_type::u32);
     assert(fmt_params[3].type == data_type::utf8);
 
-    // print the user's message
-    // (*config.print)();
-
     // now format the output
     uint64_t timestamp = msg->timestamp - config.begin_timestamp;
     double seconds = timestamp / 1000000000.0;
@@ -469,8 +465,13 @@ void print_msg(const print_config& config, const message* msg)
         args.push_back(fmt::internal::make_arg<fmt::format_context, fmt_param>(param));
     }
 
-    auto user_msg = fmt::vformat(format_string,
-                                 fmt::basic_format_args<fmt::format_context>(args.data(), args.size()));
+    std::string user_msg;
+    try {
+        user_msg = fmt::vformat(format_string,
+                                fmt::basic_format_args<fmt::format_context>(args.data(), args.size()));
+    } catch(...) {
+        user_msg = fmt::format("Error processing format string: '{}'", format_string);
+    }
 
     fprintf(config.out_file, "%s\n", user_msg.data());
 }

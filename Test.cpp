@@ -14,6 +14,7 @@ namespace tbb
     {
         uint64_t get_timestamp();
         void micro_sleep(size_t);
+        size_t get_temp_path(char* buffer, size_t len);
     }
 }
 
@@ -33,18 +34,27 @@ void __attribute__((noinline)) do_work()
     TBB_LOG("pointer: {}", nullptr);
     void* stack;
     TBB_LOG("stack ptr: {}", &stack);
+    TBB_LOG("hex : {0:#x} dec : {0} bin : {0:#032b}", 128);
+
 }
 
 int main(int argc, char** argv)
 {
+    // initial log so that logger thread spinning up isn't counted in timing
+    TBB_TRACE();
     srand(0);
+
+    char temp[1024];
+    tbb::internal::get_temp_path(temp, sizeof(temp));
+    printf("Temp Directory: %s\n", temp);
+
     // omp_set_dynamic(0);
     // omp_set_num_threads(4);
 
     constexpr double NANOSECONDS_PER_SECOND = 1000000000.0;
     size_t begin = tbb::internal::get_timestamp();
     // #pragma omp parallel for
-    for(size_t k = 0; k < 1; ++k)
+    // for(size_t k = 0; k < 10000; ++k)
     {
         do_work();
     }
