@@ -33,7 +33,10 @@ void __attribute__((noinline)) do_work()
     // // tbb::internal::micro_sleep(rand() % 5000);
     // TBB_LOG("%f %s %S", 1.0f, "char", L"wchar");
     // // tbb::internal::micro_sleep(rand() % 1000);
-    TBB_LOG("string test", u8"utf8", u"utf16", U"utf32", L"wide");
+    TBB_LOG("string test: '{}' '{}' '{}' '{}'", u8"utf8", u"utf16", U"utf32", L"wide");
+    TBB_LOG("pointer: {}", nullptr);
+    void* stack;
+    TBB_LOG("stack ptr: {}", &stack);
 }
 
 struct catchall_type
@@ -45,8 +48,8 @@ namespace fmt {
     template<>
     struct formatter<catchall_type> {
         template <typename ParseContext>
-        constexpr auto parse(ParseContext &ctx) 
-        { 
+        constexpr auto parse(ParseContext &ctx)
+        {
             auto it = ctx.begin();
             while (*it != '}') {
                 ++it;
@@ -59,7 +62,7 @@ namespace fmt {
         }
 
         template <typename FormatContext>
-        auto format(const catchall_type &cat, FormatContext &ctx) 
+        auto format(const catchall_type &cat, FormatContext &ctx)
         {
             return format_to(ctx.begin(), format_string, 0x128);
         }
@@ -86,7 +89,7 @@ namespace fmt{
 void fmt_test()
 {
     using ctx = fmt::format_context;
-    std::vector<fmt::basic_format_arg<ctx>> args;    
+    std::vector<fmt::basic_format_arg<ctx>> args;
 
     catchall_type cat;
     args.push_back(fmt::internal::make_arg<ctx, catchall_type>(cat));

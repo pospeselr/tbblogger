@@ -8,7 +8,12 @@
 #include <vector>
 #include <algorithm>
 #include <chrono>
-#include <iostream>
+#include <sstream>
+#include <locale>
+#include <codecvt>
+
+// fmtlib
+#include <fmt/format.h>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -18,8 +23,6 @@
 #endif
 
 #include "TbbLogger.h"
-
-static_assert(sizeof(void*) == sizeof(uint32_t), "pointer type must be 32 bit for code generation to work properly");
 
 using tbb::serialization::data_type;
 using tbb::serialization::message;
@@ -191,7 +194,7 @@ constexpr size_t string_length(const CharType* str)
     return (str - head);
 }
 
-struct param
+struct fmt_param
 {
     data_type type;
     union {
@@ -212,18 +215,18 @@ struct param
         double    f64_;
     } value;
 
-    param()
+    fmt_param()
     : type(data_type::invalid)
     , value({0})
     { }
 
-    param(param&& that)
+    fmt_param(fmt_param&& that)
     {
         ::memcpy(this, &that, sizeof(that));
         ::memset(&that, 0x00, sizeof(that));
     }
 
-    ~param()
+    ~fmt_param()
     {
         // strings are copied to a new properly aligned buffer
         if (type == data_type::utf8)  delete[] value.utf8_;
@@ -233,6 +236,73 @@ struct param
     }
 };
 
+namespace fmt {
+    template<>
+    struct formatter<fmt_param> {
+        template <typename ParseContext>
+        constexpr auto parse(ParseContext &ctx)
+        {
+            // extract the format string
+            auto it = ctx.begin();
+            while (*it != '}') {
+                ++it;
+            }
+            std::stringstream ss;
+            ss << "{:" << std::string(ctx.begin(), it) << '}';
+            format_string = ss.str();
+            return it;
+        }
+
+        template <typename FormatContext>
+        auto format(const fmt_param &param, FormatContext &ctx)
+        {
+            auto ctx_begin = ctx.begin();
+            switch(param.type) {
+                case data_type::utf8:
+                    return format_to(ctx_begin, format_string, param.value.utf8_);
+                    break;
+                case data_type::utf16:
+                {
+                    std::wstring_convert<std::codecvt_utf8_utf16<char16_t>, char16_t> conv;
+                    return format_to(ctx_begin, format_string, conv.to_bytes(param.value.utf16_));
+                    break;
+                }
+                case data_type::utf32:
+                {
+                    std::wstring_convert<std::codecvt_utf8<char32_t>, char32_t> conv;
+                    return format_to(ctx_begin, format_string, conv.to_bytes(param.value.utf32_));
+                }
+                case data_type::p32:
+                {
+                    return format_to(ctx_begin, "0x{:08x}", param.value.p32_);
+                }
+                case data_type::p64:
+                {
+                    return format_to(ctx_begin, "0x{:016x}", param.value.p64_);
+                }
+                default:
+                    return format_to(ctx_begin, "{}", "[NOT IMPLEMENTED]");
+            }
+
+        }
+
+        std::string format_string;
+    };
+
+    // needed implementation of make_arg for fmt_param
+    namespace v5 {
+        namespace internal {
+            template<>
+            fmt::basic_format_arg<fmt::format_context> make_arg<fmt::format_context, fmt_param>(const fmt_param& param) {
+                fmt::basic_format_arg<fmt::format_context> retval;
+                retval.value_ = value<fmt::format_context>(param);
+                retval.type_ = custom_type;
+                return retval;
+            }
+        }
+    }
+}
+
 void print_msg(const print_config& config, const message* msg)
 {
 
@@ -241,14 +311,15 @@ void print_msg(const print_config& config, const message* msg)
     const uint8_t* tail = head + len;
     head += sizeof(message);
 
-    std::vector<param> params;
+    // serialize raw message buffer to list of fmt_params
+    std::vector<fmt_param> fmt_params;
     for(int i = 0; head < tail; ++i)
     {
-        param current_param;
-        current_param.type = (data_type)*head;
-        assert(current_param.type != data_type::invalid);
-        head += sizeof(current_param.type);
-        switch(current_param.type)
+        fmt_param current_fmt_param;
+        current_fmt_param.type = (data_type)*head;
+        assert(current_fmt_param.type != data_type::invalid);
+        head += sizeof(current_fmt_param.type);
+        switch(current_fmt_param.type)
         {
             default:
                 assert(!"Invalid data_type");
@@ -256,78 +327,84 @@ void print_msg(const print_config& config, const message* msg)
             case data_type::utf8:
             {
                 const size_t len = string_length(reinterpret_cast<const char*>(head));
-                current_param.value.utf8_ = new char[len];
-                ::memcpy(current_param.value.utf8_, head, len * sizeof(char));
+                current_fmt_param.value.utf8_ = new char[len];
+                ::memcpy(current_fmt_param.value.utf8_, head, len * sizeof(char));
                 head += len * sizeof(char);
                 break;
             }
             case data_type::utf16:
             {
                 const size_t len = string_length(reinterpret_cast<const char16_t*>(head));
-                current_param.value.utf16_ = new char16_t[len];
-                ::memcpy(current_param.value.utf16_, head, len * sizeof(char16_t));
+                current_fmt_param.value.utf16_ = new char16_t[len];
+                ::memcpy(current_fmt_param.value.utf16_, head, len * sizeof(char16_t));
                 head += len * sizeof(char16_t);
                 break;
             }
             case data_type::utf32:
             {
                 const size_t len = string_length(reinterpret_cast<const char32_t*>(head));
-                current_param.value.utf32_ = new char32_t[len];
-                ::memcpy(current_param.value.utf32_, head, len * sizeof(char32_t));
+                current_fmt_param.value.utf32_ = new char32_t[len];
+                ::memcpy(current_fmt_param.value.utf32_, head, len * sizeof(char32_t));
                 head += len * sizeof(char32_t);
                 break;
             }
             case data_type::p32:
-                current_param.value.p32_ = *reinterpret_cast<const uint32_t*>(head);
+                current_fmt_param.value.p32_ = *reinterpret_cast<const uint32_t*>(head);
                 head += sizeof(uint32_t);
                 break;
             case data_type::p64:
-                current_param.value.p64_ = *reinterpret_cast<const uint64_t*>(head);
+                current_fmt_param.value.p64_ = *reinterpret_cast<const uint64_t*>(head);
                 head += sizeof(uint64_t);
                 break;
             case data_type::i8:
-                current_param.value.i8_ = *reinterpret_cast<const int8_t*>(head);
+                current_fmt_param.value.i8_ = *reinterpret_cast<const int8_t*>(head);
                 head += sizeof(int8_t);
                 break;
             case data_type::u8:
-                current_param.value.u8_ = *reinterpret_cast<const uint8_t*>(head);
+                current_fmt_param.value.u8_ = *reinterpret_cast<const uint8_t*>(head);
                 head += sizeof(uint8_t);
                 break;
             case data_type::i16:
-                current_param.value.i16_ = *reinterpret_cast<const int16_t*>(head);
+                current_fmt_param.value.i16_ = *reinterpret_cast<const int16_t*>(head);
                 head += sizeof(int16_t);
                 break;
             case data_type::u16:
-                current_param.value.u16_ = *reinterpret_cast<const uint16_t*>(head);
+                current_fmt_param.value.u16_ = *reinterpret_cast<const uint16_t*>(head);
                 head += sizeof(uint16_t);
                 break;
             case data_type::i32:
-                current_param.value.i32_ = *reinterpret_cast<const int32_t*>(head);
+                current_fmt_param.value.i32_ = *reinterpret_cast<const int32_t*>(head);
                 head += sizeof(int32_t);
                 break;
             case data_type::u32:
-                current_param.value.u32_ = *reinterpret_cast<const uint32_t*>(head);
+                current_fmt_param.value.u32_ = *reinterpret_cast<const uint32_t*>(head);
                 head += sizeof(uint32_t);
                 break;
             case data_type::i64:
-                current_param.value.i64_ = *reinterpret_cast<const int64_t*>(head);
+                current_fmt_param.value.i64_ = *reinterpret_cast<const int64_t*>(head);
                 head += sizeof(int64_t);
                 break;
             case data_type::u64:
-                current_param.value.u64_ = *reinterpret_cast<const uint64_t*>(head);
+                current_fmt_param.value.u64_ = *reinterpret_cast<const uint64_t*>(head);
                 head += sizeof(uint64_t);
                 break;
             case data_type::f32:
-                current_param.value.f32_ = *reinterpret_cast<const float*>(head);
+                current_fmt_param.value.f32_ = *reinterpret_cast<const float*>(head);
                 head += sizeof(float);
                 break;
             case data_type::f64:
-                current_param.value.f64_ = *reinterpret_cast<const double*>(head);
+                current_fmt_param.value.f64_ = *reinterpret_cast<const double*>(head);
                 head += sizeof(double);
                 break;
         }
-        params.push_back(std::move(current_param));
+        fmt_params.push_back(std::move(current_fmt_param));
     }
+
+    assert(fmt_params.size() > 3);
+    assert(fmt_params[0].type == data_type::utf8);
+    assert(fmt_params[1].type == data_type::utf8);
+    assert(fmt_params[2].type == data_type::u32);
+    assert(fmt_params[3].type == data_type::utf8);
 
     // print the user's message
     // (*config.print)();
@@ -337,15 +414,15 @@ void print_msg(const print_config& config, const message* msg)
     double seconds = timestamp / 1000000000.0;
     auto childid = msg->process_id;
     auto threadid = msg->thread_id;
-    auto function = params[0].value.utf8_;
+    auto function = fmt_params[0].value.utf8_;
     auto filename = [&]() {
         try {
-            return std::string(params[1].value.utf8_).substr(config.filename_offset);
+            return std::string(fmt_params[1].value.utf8_).substr(config.filename_offset);
         } catch(...) {
             return std::string("(nil)");
         }
     }();
-    auto line = params[2].value.u32_;
+    auto line = fmt_params[2].value.u32_;
 
     if (!(config.options & OPTIONS_HIDE_TIMESTAMP)) {
         fprintf(config.out_file, "[%f]", seconds);
@@ -364,5 +441,16 @@ void print_msg(const print_config& config, const message* msg)
         fprintf(config.out_file, " %s in %s:%u ", function, filename.c_str(), line);
     }
 
-    // fprintf(config.out_file, "%s\n", dest);
+    // format the user message
+    auto format_string = fmt_params[3].value.utf8_;
+    std::vector<fmt::basic_format_arg<fmt::format_context>> args;
+    for(size_t k = 4; k < fmt_params.size(); ++k) {
+        const auto& param = fmt_params[k];
+        args.push_back(fmt::internal::make_arg<fmt::format_context, fmt_param>(param));
+    }
+
+    auto user_msg = fmt::vformat(format_string,
+                                 fmt::basic_format_args<fmt::format_context>(args.data(), args.size()));
+
+    fprintf(config.out_file, "%s\n", user_msg.data());
 }
