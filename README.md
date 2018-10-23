@@ -33,7 +33,7 @@ make win_aggregate
 The default output format for each log entry is:
 
 ```bash
-[$FIREFOX_PROCESS][$THREAD_ID] $FUNCTION_NAME in $FILENAME:$LINENUMBER $MESSAGE
+[$TIMESTAMP][$FIREFOX_PROCESS][$THREAD_ID] $FUNCTION_NAME in $FILENAME:$LINENUMBER $MESSAGE
 ```
 
 Each of those pieces of information can optionally removed using various switches on aggregate tool.   See aggregate --help:
