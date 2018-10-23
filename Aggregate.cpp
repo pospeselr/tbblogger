@@ -258,6 +258,7 @@ namespace fmt {
         {
             auto ctx_begin = ctx.begin();
             switch(param.type) {
+                // string types
                 case data_type::utf8:
                     return format_to(ctx_begin, format_string, param.value.utf8_);
                     break;
@@ -272,16 +273,35 @@ namespace fmt {
                     std::wstring_convert<std::codecvt_utf8<char32_t>, char32_t> conv;
                     return format_to(ctx_begin, format_string, conv.to_bytes(param.value.utf32_));
                 }
+                // pointer types
                 case data_type::p32:
-                {
                     return format_to(ctx_begin, "0x{:08x}", param.value.p32_);
-                }
                 case data_type::p64:
-                {
                     return format_to(ctx_begin, "0x{:016x}", param.value.p64_);
-                }
+                // integer types
+                case data_type::i8:
+                    return format_to(ctx_begin, format_string, param.value.i8_);
+                case data_type::u8:
+                    return format_to(ctx_begin, format_string, param.value.u8_);
+                case data_type::i16:
+                    return format_to(ctx_begin, format_string, param.value.i16_);
+                case data_type::u16:
+                    return format_to(ctx_begin, format_string, param.value.u16_);
+                case data_type::i32:
+                    return format_to(ctx_begin, format_string, param.value.i32_);
+                case data_type::u32:
+                    return format_to(ctx_begin, format_string, param.value.u32_);
+                case data_type::i64:
+                    return format_to(ctx_begin, format_string, param.value.i64_);
+                case data_type::u64:
+                    return format_to(ctx_begin, format_string, param.value.u64_);
+                // float types
+                case data_type::f32:
+                    return format_to(ctx_begin, format_string, param.value.f32_);
+                case data_type::f64:
+                    return format_to(ctx_begin, format_string, param.value.f64_);
                 default:
-                    return format_to(ctx_begin, "{}", "[NOT IMPLEMENTED]");
+                    assert(!"Invalid data_type");
             }
 
         }
