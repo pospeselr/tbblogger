@@ -16,7 +16,7 @@ void logging()
     TBB_LOG("null pointer: {}", nullptr);
     int local;
     TBB_LOG("stack ptr: {}", &local);
-    TBB_LOG("hex : {0:#x} dec : {0} bin : {0:#032b}", 128);
+    TBB_LOG("hex : {0:#x} dec : {0} bin : {0:#016b}", (uint16_t)128);
 }
 ...
 ```
