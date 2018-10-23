@@ -24,10 +24,11 @@ namespace tbb
     {
         enum class data_type : uint8_t
         {
+            invalid = 0xFF,
             // strings
-            str_utf8,
-            str_utf16,
-            str_utf32,
+            utf8 = 0,
+            utf16,
+            utf32,
             // pointers
             p32,
             p64,

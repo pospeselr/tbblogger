@@ -144,12 +144,12 @@ namespace tbb
         #define UTF32_NULLSTRING  NULL_STRING(U)
         #define WIDE_NULLSTRING  NULL_STRING(L)
 
-        template<typename T>
-        constexpr size_t param_size_string(const T* str)
+        template<typename CharType>
+        constexpr size_t param_size_string(const CharType* str)
         {
             const auto* head = str;
-            while(*str++ != (T)0);
-            return (str - head) * sizeof(T) + sizeof(data_type);
+            while(*str++ != (CharType)0);
+            return (str - head) * sizeof(CharType) + sizeof(data_type);
         }
 
         /// Size Params
@@ -209,11 +209,11 @@ namespace tbb
             switch(sizeof(CharType))
             {
                 case sizeof(char):
-                    *dest++ = (uint8_t)data_type::str_utf8; break;
+                    *dest++ = (uint8_t)data_type::utf8; break;
                 case sizeof(char16_t):
-                    *dest++ = (uint8_t)data_type::str_utf16; break;
+                    *dest++ = (uint8_t)data_type::utf16; break;
                 case sizeof(char32_t):
-                    *dest++ = (uint8_t)data_type::str_utf32; break;
+                    *dest++ = (uint8_t)data_type::utf32; break;
             }
             auto* str_dest = reinterpret_cast<CharType*>(dest);
             while((*str_dest++ = *str++));
