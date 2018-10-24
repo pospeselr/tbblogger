@@ -1,3 +1,24 @@
+diff --git a/dom/ipc/ContentChild.cpp b/dom/ipc/ContentChild.cpp
+index 5cee2c0fc2cd..83082e211c9b 100644
+--- a/dom/ipc/ContentChild.cpp
++++ b/dom/ipc/ContentChild.cpp
+@@ -4,6 +4,8 @@
+  * License, v. 2.0. If a copy of the MPL was not distributed with this
+  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+ 
++#include "TbbLogger.h"
++
+ #ifdef MOZ_WIDGET_GTK
+ #include <gtk/gtk.h>
+ #endif
+@@ -599,6 +601,7 @@ ContentChild::Init(MessageLoop* aIOLoop,
+                    uint64_t aChildID,
+                    bool aIsForBrowser)
+ {
++  TBB_LOG("Child Process {} Launch", aChildID);
+ #ifdef MOZ_WIDGET_GTK
+   // When running X11 only build we need to pass a display down
+   // to gtk_init because it's not going to use the one from the environment
 diff --git a/security/sandbox/win/src/sandboxbroker/sandboxBroker.cpp b/security/sandbox/win/src/sandboxbroker/sandboxBroker.cpp
 index 852f535de152..2240842a6ebe 100644
 --- a/security/sandbox/win/src/sandboxbroker/sandboxBroker.cpp
@@ -20,12 +41,33 @@ index 852f535de152..2240842a6ebe 100644
  
    // Enable the child process to write log files when setup
    wchar_t const* logFileName = nullptr;
+diff --git a/toolkit/xre/nsAppRunner.cpp b/toolkit/xre/nsAppRunner.cpp
+index 7889919ca677..9f347092a1cd 100644
+--- a/toolkit/xre/nsAppRunner.cpp
++++ b/toolkit/xre/nsAppRunner.cpp
+@@ -3,6 +3,8 @@
+  * License, v. 2.0. If a copy of the MPL was not distributed with this
+  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+ 
++#include "TbbLogger.h"
++
+ #include "mozilla/dom/ContentParent.h"
+ #include "mozilla/dom/ContentChild.h"
+ #include "mozilla/ipc/GeckoChildProcessHost.h"
+@@ -5381,6 +5383,7 @@ XREMain::XRE_mainRun()
+ int
+ XREMain::XRE_main(int argc, char* argv[], const BootstrapConfig& aConfig)
+ {
++  TBB_LOG("Parent Process Launch");
+   ScopedLogging log;
+ 
+   mozilla::LogModule::Init();
 diff --git a/xpcom/build/TbbLogger.cpp b/xpcom/build/TbbLogger.cpp
 new file mode 100644
-index 000000000000..dde5e84c74d9
+index 000000000000..a342fd86078d
 --- /dev/null
 +++ b/xpcom/build/TbbLogger.cpp
-@@ -0,0 +1,467 @@
+@@ -0,0 +1,572 @@
 +#include "TbbLogger.h"
 +
 +// C
@@ -38,6 +80,7 @@ index 000000000000..dde5e84c74d9
 +#include <atomic>
 +#include <memory>
 +#include <vector>
++#include <functional>
 +
 +#ifdef _WIN32
 +#include <windows.h>
@@ -58,7 +101,7 @@ index 000000000000..dde5e84c74d9
 +        // timestamp in nanoseconds
 +        uint64_t get_timestamp()
 +        {
-+            constexpr uint64_t NANOSECONDS_IN_SECOND = 1000000000;
++            constexpr uint64_t NANOSECONDS_PER_SECOND = 1000000000;
 +#ifdef _WIN32
 +            static LARGE_INTEGER frequency = []()
 +            {
@@ -67,16 +110,16 @@ index 000000000000..dde5e84c74d9
 +                return frequency;
 +            }();
 +
-+            LARGE_INTEGER counter;
-+            QueryPerformanceCounter(&counter);
-+            counter.QuadPart *= NANOSECONDS_IN_SECOND;
-+            counter.QuadPart /= frequency.QuadPart;
++            LARGE_INTEGER ticks;
++            QueryPerformanceCounter(&ticks);
++            ticks.QuadPart *= NANOSECONDS_PER_SECOND;
++            ticks.QuadPart /= frequency.QuadPart;
 +
-+            return counter.QuadPart;
++            return ticks.QuadPart;
 +#else
 +            timespec counter;
 +            clock_gettime(CLOCK_MONOTONIC_RAW, &counter);
-+            uint64_t retval = uint64_t(counter.tv_sec) * NANOSECONDS_IN_SECOND + uint64_t(counter.tv_nsec);
++            uint64_t retval = uint64_t(counter.tv_sec) * NANOSECONDS_PER_SECOND + uint64_t(counter.tv_nsec);
 +            return retval;
 +#endif
 +        }
@@ -149,7 +192,6 @@ index 000000000000..dde5e84c74d9
 +            char filename[1024];
 +            char* head = filename;
 +            head += get_temp_path(head, sizeof(filename));
-+            printf("Temp : %s\n", filename);
 +#if _WIN32
 +            head += sprintf(head, "firefox");
 +            CreateDirectoryA(filename, nullptr);
@@ -165,118 +207,222 @@ index 000000000000..dde5e84c74d9
 +
 +    namespace serialization
 +    {
++        #define NULL_STRING(PREFIX) PREFIX##"(nil)"
++        #define UTF8_NULLSTRING   NULL_STRING(u8)
++        #define UTF16_NULLSTRING  NULL_STRING(u)
++        #define UTF32_NULLSTRING  NULL_STRING(U)
++        #define WIDE_NULLSTRING  NULL_STRING(L)
++
++        template<typename CharType>
++        constexpr size_t param_size_string(const CharType* str)
++        {
++            const auto* head = str;
++            while(*str++ != (CharType)0);
++            return (str - head) * sizeof(CharType) + sizeof(data_type);
++        }
 +
 +        /// Size Params
 +        size_t param_size_impl(const char* str)
 +        {
-+            return sizeof(char) * strlen(str) + sizeof(char) + sizeof(data_type);
++            if (!str) {
++                str = UTF8_NULLSTRING;
++            }
++            return param_size_string(str);
 +        }
-+
++        size_t param_size_impl(const char16_t* str)
++        {
++            if (!str) {
++                str = UTF16_NULLSTRING;
++            }
++            return param_size_string(str);
++        }
++        size_t param_size_impl(const char32_t* str)
++        {
++            if (!str) {
++                str = UTF32_NULLSTRING;
++            }
++            return param_size_string(str);
++        }
 +        size_t param_size_impl(const wchar_t* str)
 +        {
-+            return sizeof(wchar_t) * wcslen(str) + sizeof(wchar_t) + sizeof(data_type);
++            if (!str) {
++                str = WIDE_NULLSTRING;
++            }
++            return param_size_string(str);
 +        }
 +
 +        size_t param_size(char str[])
 +        {
 +            return param_size_impl(str);
 +        }
-+
++        size_t param_size(char16_t str[])
++        {
++            return param_size_impl(str);
++        }
++        size_t param_size(char32_t str[])
++        {
++            return param_size_impl(str);
++        }
 +        size_t param_size(wchar_t str[])
 +        {
 +            return param_size_impl(str);
 +        }
 +
 +        /// Pack Params
-+        uint8_t* pack_param(uint8_t* dest) { return dest; }
-+        uint8_t* pack_param(uint8_t* dest, const char* str)
++        template<typename CharType>
++        uint8_t* pack_param_string(uint8_t* dest, const CharType* str)
 +        {
-+            *dest++ = (uint8_t)data_type::ascii_string;
-+            while((*dest++ = *str++));
-+            return dest;
-+        }
-+        uint8_t* pack_param(uint8_t* dest, const wchar_t* str)
-+        {
-+            *dest++ = (uint8_t)data_type::wide_string;
-+            wchar_t* str_dest = reinterpret_cast<wchar_t*>(dest);
++            static_assert((sizeof(CharType) == sizeof(char) ||
++                           sizeof(CharType) == sizeof(char16_t) ||
++                           sizeof(CharType) == sizeof(char32_t)), "Invalid character size");
++            switch(sizeof(CharType))
++            {
++                case sizeof(char):
++                    *dest++ = (uint8_t)data_type::utf8; break;
++                case sizeof(char16_t):
++                    *dest++ = (uint8_t)data_type::utf16; break;
++                case sizeof(char32_t):
++                    *dest++ = (uint8_t)data_type::utf32; break;
++            }
++            auto* str_dest = reinterpret_cast<CharType*>(dest);
 +            while((*str_dest++ = *str++));
 +            return reinterpret_cast<uint8_t*>(str_dest);
 +        }
-+        uint8_t* pack_param(uint8_t* dest, void* ptr)
++
++        // various string overloads
++        uint8_t* pack_param_impl(uint8_t* dest, const char* str)
 +        {
++            if (!str) {
++                str = UTF8_NULLSTRING;
++            }
++            return pack_param_string(dest, str);
++        }
++        uint8_t* pack_param_impl(uint8_t* dest, const char16_t* str)
++        {
++            if (!str) {
++                str = UTF16_NULLSTRING;
++            }
++            return pack_param_string(dest, str);
++        }
++        uint8_t* pack_param_impl(uint8_t* dest, const char32_t* str)
++        {
++            if (!str) {
++                str = UTF32_NULLSTRING;
++            }
++            return pack_param_string(dest, str);
++        }
++        uint8_t* pack_param_impl(uint8_t* dest, const wchar_t* str)
++        {
++            if (!str) {
++                str = WIDE_NULLSTRING;
++            }
++            return pack_param_string(dest, str);
++        }
++        uint8_t* pack_param_impl(uint8_t* dest, char str[])
++        {
++            return pack_param_impl(dest, (const char*)str);
++        }
++        uint8_t* pack_param_impl(uint8_t* dest, char16_t str[])
++        {
++            return pack_param_impl(dest, (const char16_t*)str);
++        }
++        uint8_t* pack_param_impl(uint8_t* dest, char32_t str[])
++        {
++            return pack_param_impl(dest, (const char32_t*)str);
++        }
++        uint8_t* pack_param_impl(uint8_t* dest, wchar_t str[])
++        {
++            return pack_param_impl(dest, (const wchar_t*)str);
++        }
++
++        uint8_t* pack_param_impl(uint8_t* dest, const void* ptr)
++        {
++            static_assert(sizeof(void*) == sizeof(uint32_t) ||
++                          sizeof(void*) == sizeof(uint64_t),
++                          "Invalid pointer size");
++
 +            constexpr size_t N = sizeof(void*);
-+            *dest++ = (uint8_t)(data_type::pointer);
++            if(N == sizeof(uint32_t)) {
++                *dest++ = (uint8_t)(data_type::p32);
++            } else if(N == sizeof(uint64_t)) {
++                *dest++ = (uint8_t)(data_type::p64);
++            }
++
 +            memcpy(dest, &ptr, N);
 +            return dest + N;
 +        }
-+        uint8_t* pack_param(uint8_t* dest, std::nullptr_t)
++        uint8_t* pack_param_impl(uint8_t* dest, void* ptr)
 +        {
-+            return pack_param(dest, (void*)nullptr);
++            return pack_param_impl(dest, (const void*)ptr);
 +        }
-+        uint8_t* pack_param(uint8_t* dest, int8_t val)
++        uint8_t* pack_param_impl(uint8_t* dest, std::nullptr_t)
++        {
++            return pack_param_impl(dest, (void*)nullptr);
++        }
++        uint8_t* pack_param_impl(uint8_t* dest, int8_t val)
 +        {
 +            constexpr size_t N = sizeof(int8_t);
 +            *dest++ = (uint8_t)(data_type::i8);
 +            memcpy(dest, &val, N);
 +            return dest + N;
 +        }
-+        uint8_t* pack_param(uint8_t* dest, uint8_t val)
++        uint8_t* pack_param_impl(uint8_t* dest, uint8_t val)
 +        {
 +            constexpr size_t N = sizeof(uint8_t);
 +            *dest++ = (uint8_t)(data_type::u8);
 +            memcpy(dest, &val, N);
 +            return dest + N;
 +        }
-+        uint8_t* pack_param(uint8_t* dest, int16_t val)
++        uint8_t* pack_param_impl(uint8_t* dest, int16_t val)
 +        {
 +           constexpr size_t N = sizeof(int16_t);
 +            *dest++ = (uint8_t)(data_type::i16);
 +            memcpy(dest, &val, N);
 +            return dest + N;
 +        }
-+        uint8_t* pack_param(uint8_t* dest, uint16_t val)
++        uint8_t* pack_param_impl(uint8_t* dest, uint16_t val)
 +        {
 +            constexpr size_t N = sizeof(uint16_t);
 +            *dest++ = (uint8_t)(data_type::u16);
 +            memcpy(dest, &val, N);
 +            return dest + N;
 +        }
-+        uint8_t* pack_param(uint8_t* dest, int32_t val)
++        uint8_t* pack_param_impl(uint8_t* dest, int32_t val)
 +        {
 +            constexpr size_t N = sizeof(int32_t);
 +            *dest++ = (uint8_t)(data_type::i32);
 +            memcpy(dest, &val, N);
 +            return dest + N;
 +        }
-+        uint8_t* pack_param(uint8_t* dest, uint32_t val)
++        uint8_t* pack_param_impl(uint8_t* dest, uint32_t val)
 +        {
 +            constexpr size_t N = sizeof(uint32_t);
 +            *dest++ = (uint8_t)(data_type::u32);
 +            memcpy(dest, &val, N);
 +            return dest + N;
 +        }
-+        uint8_t* pack_param(uint8_t* dest, int64_t val)
++        uint8_t* pack_param_impl(uint8_t* dest, int64_t val)
 +        {
 +            constexpr size_t N = sizeof(int64_t);
 +            *dest++ = (uint8_t)(data_type::i64);
 +            memcpy(dest, &val, N);
 +            return dest + N;
 +        }
-+        uint8_t* pack_param(uint8_t* dest, uint64_t val)
++        uint8_t* pack_param_impl(uint8_t* dest, uint64_t val)
 +        {
 +            constexpr size_t N = sizeof(uint64_t);
 +            *dest++ = (uint8_t)(data_type::u64);
 +            memcpy(dest, &val, N);
 +            return dest + N;
 +        }
-+        uint8_t* pack_param(uint8_t* dest, float val)
++        uint8_t* pack_param_impl(uint8_t* dest, float val)
 +        {
 +            constexpr size_t N = sizeof(float);
 +            *dest++ = (uint8_t)(data_type::f32);
 +            memcpy(dest, &val, N);
 +            return dest + N;
 +        }
-+        uint8_t* pack_param(uint8_t* dest, double val)
++        uint8_t* pack_param_impl(uint8_t* dest, double val)
 +        {
 +            constexpr size_t N = sizeof(double);
 +            *dest++ = (uint8_t)(data_type::f64);
@@ -356,7 +502,8 @@ index 000000000000..dde5e84c74d9
 +            return true;
 +        }
 +
-+        size_t visit_msgs(message_queue q, auto func)
++        // size_t visit_msgs(message_queue q, auto func)
++        size_t visit_msgs(message_queue q, std::function<void(serialization::message* msg)> func)
 +        {
 +            for(auto* msg : *q) {
 +                func(msg);
@@ -496,10 +643,10 @@ index 000000000000..dde5e84c74d9
 \ No newline at end of file
 diff --git a/xpcom/build/TbbLogger.h b/xpcom/build/TbbLogger.h
 new file mode 100644
-index 000000000000..657987ae1e86
+index 000000000000..a9207b606085
 --- /dev/null
 +++ b/xpcom/build/TbbLogger.h
-@@ -0,0 +1,157 @@
+@@ -0,0 +1,179 @@
 +#ifndef TBB_LOGGER_H
 +#define TBB_LOGGER_H
 +
@@ -526,9 +673,15 @@ index 000000000000..657987ae1e86
 +    {
 +        enum class data_type : uint8_t
 +        {
-+            ascii_string = 1,
-+            wide_string,
-+            pointer,
++            invalid = 0xFF,
++            // strings
++            utf8 = 0,
++            utf16,
++            utf32,
++            // pointers
++            p32,
++            p64,
++            // integers
 +            i8,
 +            u8,
 +            i16,
@@ -537,6 +690,7 @@ index 000000000000..657987ae1e86
 +            u32,
 +            i64,
 +            u64,
++            // floating points
 +            f32,
 +            f64,
 +        };
@@ -546,16 +700,24 @@ index 000000000000..657987ae1e86
 +
 +        // string size of unknown size implementation
 +        size_t param_size_impl(const char* str);
++        size_t param_size_impl(const char16_t* str);
++        size_t param_size_impl(const char32_t* str);
 +        size_t param_size_impl(const wchar_t* str);
 +        // arbitatry pointer size impemetation
-+        constexpr size_t param_size_impl(const void*)        { return sizeof(void*)       + sizeof(data_type); }
++        constexpr size_t param_size_impl(const void*)        { return sizeof(void*)        + sizeof(data_type); }
 +        // fixed string literal size
 +        template<size_t N>
-+        constexpr size_t param_size(const char (&str)[N])    { return sizeof(char) * N    + sizeof(data_type); }
++        constexpr size_t param_size(const char (&str)[N])    { return sizeof(char)     * N + sizeof(data_type); }
 +        template<size_t N>
-+        constexpr size_t param_size(const wchar_t (&str)[N]) { return sizeof(wchar_t) * N + sizeof(data_type); }
++        constexpr size_t param_size(const char16_t (&str)[N]){ return sizeof(char16_t) * N + sizeof(data_type); }
++        template<size_t N>
++        constexpr size_t param_size(const char32_t (&str)[N]){ return sizeof(char32_t) * N + sizeof(data_type); }
++        template<size_t N>
++        constexpr size_t param_size(const wchar_t (&str)[N]) { return sizeof(wchar_t)  * N + sizeof(data_type); }
 +        // read/write string buffer size
 +        size_t param_size(char str[]);
++        size_t param_size(char16_t str[]);
++        size_t param_size(char32_t str[]);
 +        size_t param_size(wchar_t str[]);
 +        // catch-all template functionf or pointers
 +        template<typename T>
@@ -580,26 +742,33 @@ index 000000000000..657987ae1e86
 +            return param_size(std::forward<FIRST>(first)) + param_size(std::forward<ARGS>(args)...);
 +        }
 +
-+        uint8_t* pack_param(uint8_t* dest);
-+        uint8_t* pack_param(uint8_t* dest, const char* str);
-+        uint8_t* pack_param(uint8_t* dest, const wchar_t* str);
-+        uint8_t* pack_param(uint8_t* dest, const void* ptr);
-+        uint8_t* pack_param(uint8_t* dest, std::nullptr_t);
-+        uint8_t* pack_param(uint8_t* dest, int8_t val);
-+        uint8_t* pack_param(uint8_t* dest, uint8_t val);
-+        uint8_t* pack_param(uint8_t* dest, int16_t val);
-+        uint8_t* pack_param(uint8_t* dest, uint16_t val);
-+        uint8_t* pack_param(uint8_t* dest, int32_t val);
-+        uint8_t* pack_param(uint8_t* dest, uint32_t val);
-+        uint8_t* pack_param(uint8_t* dest, int64_t val);
-+        uint8_t* pack_param(uint8_t* dest, uint64_t val);
-+        uint8_t* pack_param(uint8_t* dest, float val);
-+        uint8_t* pack_param(uint8_t* dest, double val);
++        uint8_t* pack_param_impl(uint8_t* dest, const char* str);
++        uint8_t* pack_param_impl(uint8_t* dest, const char16_t* str);
++        uint8_t* pack_param_impl(uint8_t* dest, const char32_t* str);
++        uint8_t* pack_param_impl(uint8_t* dest, const wchar_t* str);
++        uint8_t* pack_param_impl(uint8_t* dest, char str[]);
++        uint8_t* pack_param_impl(uint8_t* dest, wchar_t str[]);
++        uint8_t* pack_param_impl(uint8_t* dest, char16_t str[]);
++        uint8_t* pack_param_impl(uint8_t* dest, char32_t str[]);
++        uint8_t* pack_param_impl(uint8_t* dest, const void* ptr);
++        uint8_t* pack_param_impl(uint8_t* dest, void* ptr);
++        uint8_t* pack_param_impl(uint8_t* dest, std::nullptr_t);
++        uint8_t* pack_param_impl(uint8_t* dest, int8_t val);
++        uint8_t* pack_param_impl(uint8_t* dest, uint8_t val);
++        uint8_t* pack_param_impl(uint8_t* dest, int16_t val);
++        uint8_t* pack_param_impl(uint8_t* dest, uint16_t val);
++        uint8_t* pack_param_impl(uint8_t* dest, int32_t val);
++        uint8_t* pack_param_impl(uint8_t* dest, uint32_t val);
++        uint8_t* pack_param_impl(uint8_t* dest, int64_t val);
++        uint8_t* pack_param_impl(uint8_t* dest, uint64_t val);
++        uint8_t* pack_param_impl(uint8_t* dest, float val);
++        uint8_t* pack_param_impl(uint8_t* dest, double val);
 +
++        inline uint8_t* pack_param(uint8_t* dest) {return dest;}
 +        template<typename FIRST, typename ...ARGS>
 +        uint8_t* pack_param(uint8_t* dest, FIRST&& first, ARGS&&... args)
 +        {
-+            return pack_param(pack_param(dest, std::forward<FIRST>(first)), std::forward<ARGS>(args)...);
++            return pack_param(pack_param_impl(dest, std::forward<FIRST>(first)), std::forward<ARGS>(args)...);
 +        }
 +
 +        #pragma pack(1)
