@@ -4,7 +4,13 @@ Minimal offline logger for Firefox using [fmtlib](http://fmtlib.net/).  Logging 
 
 ## Usage
 
-Apply TbbLogger.patch to your firefox source. You will be able to add [fmtlib](http://fmtlib.net/latest/syntax.html) logging functionality by including the TbbLogger.h header:
+Apply TbbLogger.patch to your firefox source. This patch does a couple of things:
+
+1. Adds TbbLogger.cpp and TbbLogger.h to the firefox build
+2. Adds %TEMP% to the directory whitelist on Windows
+3. Adds initial TBB_LOG messages toward the beginning of the parent and child process launch logic
+
+You will be able to add fmtlib-style logging functionality by including the TbbLogger.h header (see http://fmtlib.net/latest/syntax.html for fmtlib syntax).
 
 ```cpp
 ...
@@ -21,16 +27,16 @@ void logging()
 ...
 ```
 
-Logged messages are serialized to binary blobs living in `/tmp/firefox/firefoxN.bin` (on Linux) or `C:\Users\%USERNAME%\Temp\firefox\firefoxN.bin` (on Windows).  These blobs can be squashed together into human-readable text using the aggregate tool built via:
+Logged messages are serialized to binary blobs living in `/tmp/firefox/firefoxN.bin` (on Linux) or `C:\Users\%USERNAME%\Temp\firefox\firefoxN.bin` (on Windows).  These blobs can be combined together and converted into human-readable text using the aggregate tool built via:
 
 ```bash
 # build linux aggregate tool
-make aggregate
+$ make aggregate
 # build windows aggregate tool (requires mingw)
-make win_aggregate
+$ make win_aggregate
 ```
 
-The default output format for each log entry is:
+Messages appear in order sorted by timestamp.  The default output format for each log entry is:
 
 ```bash
 [$TIMESTAMP][$FIREFOX_PROCESS][$THREAD_ID] $FUNCTION_NAME in $FILENAME:$LINENUMBER $MESSAGE
@@ -39,6 +45,7 @@ The default output format for each log entry is:
 Each of those pieces of information can optionally removed using various switches on aggregate tool.   See aggregate --help:
 
 ```
+$ ./aggregate --help
 Usage: aggregate [OPTION]... [FILE]... -o output.log
 Options:
  --help                 Print this help message
@@ -65,4 +72,4 @@ $ ./aggregate /tmp/firefox/*.bin --hide-threadid
 
 ## Caveats
 
-- On Linux, firefox's `security.sadbox.content.level` pref must be reduced to 0
+- On Linux, firefox's `security.sandbox.content.level` pref must be reduced to 0
