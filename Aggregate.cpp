@@ -302,6 +302,7 @@ namespace fmt {
                     return format_to(ctx_begin, format_string, param.value.f64_);
                 default:
                     assert(!"Invalid data_type");
+                    return format_to(ctx_begin, "{}", "Invalid data_type");
             }
         }
 
