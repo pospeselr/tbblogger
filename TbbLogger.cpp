@@ -74,6 +74,35 @@ namespace tbb
 #endif
         }
 
+        void thread_sleep(size_t milliseconds)
+        {
+#ifdef _WIN32
+            Sleep(milliseconds);
+#else
+            const auto microseconds = milliseconds * 1000;
+            usleep(microseconds);
+#endif
+        }
+
+        void set_thread_name()
+        {
+#ifdef _WIN32
+            // only works on Win10  and up :(
+            typedef HRESULT (WINAPI *SetThreadDescription_t)(HANDLE,PCWSTR);
+            SetThreadDescription_t SetThreadDescription =
+                (SetThreadDescription_t)GetProcAddress(
+                    GetModuleHandle(TEXT("kernel32.dll")),
+                    "SetThreadDescription");
+
+            if(SetThreadDescription != nullptr)
+            {
+                SetThreadDescription(GetCurrentThread(), L"tbblogger_thread");
+            }
+#else
+            prctl(PR_SET_NAME,"tbblogger_thread",0,0,0);
+#endif // _WIN32
+        }
+
         const char* get_command_line()
         {
 #ifdef _WIN32
@@ -432,17 +461,6 @@ namespace tbb
             return true;
         }
 
-        // size_t visit_msgs(message_queue q, auto func)
-        size_t visit_msgs(message_queue q, std::function<void(serialization::message* msg)> func)
-        {
-            for(auto* msg : *q) {
-                func(msg);
-            }
-            size_t retval = q->size();
-            q->clear();
-            return retval;
-        }
-
         message_queue swap_queues()
         {
 #ifdef _WIN32
@@ -515,14 +533,10 @@ namespace tbb
             thread_started.store(true);
 
             // name thread for debugging
-#ifdef _WIN32
-
-#else
-            prctl(PR_SET_NAME,"logger_func",0,0,0);
-#endif // _WIN32
+            internal::set_thread_name();
 
             // init logging file
-            int32_t childID = internal::get_child_id();
+            const int32_t childID = internal::get_child_id();
             FILE* log_file = internal::get_log_file(childID);
 
             size_t total_messages_written = 0;
@@ -534,18 +548,25 @@ namespace tbb
                 {
                     auto queue = swap_queues();
 
-                    size_t messages_written = visit_msgs(queue,
-                        [&](serialization::message* msg) -> void
-                        {
-                            msg->process_id = childID;
-                            fwrite(msg, sizeof(uint8_t), msg->length, log_file);
-                            free_msg(msg);
-                        });
+                    // write out messages to disk and free their memory
+                    for(auto* msg : *queue) {
+                        msg->process_id = childID;
+                        fwrite(msg, sizeof(uint8_t), msg->length, log_file);
+                        free_msg(msg);
+                    }
+
+                    const auto messages_written = queue->size();
+                    queue->clear();
 
                     remaining_messages -= messages_written;
                     total_messages_written += messages_written;
                 }
                 fflush(log_file);
+
+                // sleep for a bit rather than spinning
+                while (!signal_exit && remaining_messages == 0) {
+                    internal::thread_sleep(5);
+                }
             }
 
             // flush to disk
