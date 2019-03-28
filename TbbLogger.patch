@@ -11,10 +11,9 @@ index 5cee2c0fc2cd..83082e211c9b 100644
  #ifdef MOZ_WIDGET_GTK
  #include <gtk/gtk.h>
  #endif
-@@ -599,6 +601,7 @@ ContentChild::Init(MessageLoop* aIOLoop,
-                    uint64_t aChildID,
-                    bool aIsForBrowser)
- {
+@@ -560,5 +561,6 @@ bool ContentChild::Init(MessageLoop* aIOLoop, base::ProcessId aParentPid,
+                         IPC::Channel* aChannel, uint64_t aChildID,
+                         bool aIsForBrowser) {
 +  TBB_LOG("Child Process {} Launch", aChildID);
  #ifdef MOZ_WIDGET_GTK
    // When running X11 only build we need to pass a display down
@@ -54,10 +53,10 @@ index 7889919ca677..9f347092a1cd 100644
  #include "mozilla/dom/ContentParent.h"
  #include "mozilla/dom/ContentChild.h"
  #include "mozilla/ipc/GeckoChildProcessHost.h"
-@@ -5381,6 +5383,7 @@ XREMain::XRE_mainRun()
- int
- XREMain::XRE_main(int argc, char* argv[], const BootstrapConfig& aConfig)
- {
+@@ -5163,6 +5165,7 @@ XREMain::XRE_mainRun()
+  *            .app/Contents/Resources.
+  */
+ int XREMain::XRE_main(int argc, char* argv[], const BootstrapConfig& aConfig) {
 +  TBB_LOG("Parent Process Launch");
    ScopedLogging log;
  
