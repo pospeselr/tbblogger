@@ -565,7 +565,7 @@ namespace tbb
 
                 // sleep for a bit rather than spinning
                 while (!signal_exit && remaining_messages == 0) {
-                    internal::thread_sleep(5);
+                    internal::thread_sleep(20);
                 }
             }
 
