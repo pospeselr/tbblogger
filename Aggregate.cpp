@@ -256,7 +256,7 @@ namespace fmt {
         template <typename FormatContext>
         auto format(const fmt_param &param, FormatContext &ctx)
         {
-            auto ctx_begin = ctx.begin();
+            auto ctx_begin = ctx.out();
             switch(param.type) {
                 // string types
                 case data_type::utf8:
