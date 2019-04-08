@@ -8,15 +8,6 @@
 #include <vector>
 #include <sstream>
 
-namespace tbb
-{
-    namespace internal
-    {
-        uint64_t get_timestamp();
-        size_t get_temp_path(char* buffer, size_t len);
-    }
-}
-
 void logging()
 {
     TBB_LOG("string test: '{}' '{}' '{}' '{}'", u8"utf8", u"utf16", U"utf32", L"wide");
@@ -25,6 +16,8 @@ void logging()
     TBB_LOG("stack ptr: {}", &local);
     TBB_LOG("hex : {0:#x} dec : {0} bin : {0:#016b}", (uint16_t)128);
 }
+
+void logging2();
 
 int main(int argc, char** argv)
 {
@@ -45,6 +38,7 @@ int main(int argc, char** argv)
     // for(size_t k = 0; k < 10000; ++k)
     {
         logging();
+        logging2();
     }
     size_t end = tbb::internal::get_timestamp();
 
