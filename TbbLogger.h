@@ -311,7 +311,7 @@ namespace tbb
             memcpy(dest, &ptr, N);
             return dest + N;
         }
-        
+
         inline uint8_t* pack_param_impl(uint8_t* dest, void* ptr)
         {
             return pack_param_impl(dest, (const void*)ptr);
@@ -329,7 +329,7 @@ namespace tbb
             memcpy(dest, &val, N);
             return dest + N;
         }
-        
+
         inline uint8_t* pack_param_impl(uint8_t* dest, uint8_t val)
         {
             constexpr size_t N = sizeof(uint8_t);
@@ -337,7 +337,7 @@ namespace tbb
             memcpy(dest, &val, N);
             return dest + N;
         }
-        
+
         inline uint8_t* pack_param_impl(uint8_t* dest, int16_t val)
         {
            constexpr size_t N = sizeof(int16_t);
@@ -345,7 +345,7 @@ namespace tbb
             memcpy(dest, &val, N);
             return dest + N;
         }
-        
+
         inline uint8_t* pack_param_impl(uint8_t* dest, uint16_t val)
         {
             constexpr size_t N = sizeof(uint16_t);
@@ -353,7 +353,7 @@ namespace tbb
             memcpy(dest, &val, N);
             return dest + N;
         }
-        
+
         inline uint8_t* pack_param_impl(uint8_t* dest, int32_t val)
         {
             constexpr size_t N = sizeof(int32_t);
@@ -361,7 +361,7 @@ namespace tbb
             memcpy(dest, &val, N);
             return dest + N;
         }
-        
+
         inline uint8_t* pack_param_impl(uint8_t* dest, uint32_t val)
         {
             constexpr size_t N = sizeof(uint32_t);
@@ -369,7 +369,7 @@ namespace tbb
             memcpy(dest, &val, N);
             return dest + N;
         }
-        
+
         inline uint8_t* pack_param_impl(uint8_t* dest, int64_t val)
         {
             constexpr size_t N = sizeof(int64_t);
@@ -377,7 +377,7 @@ namespace tbb
             memcpy(dest, &val, N);
             return dest + N;
         }
-        
+
         inline uint8_t* pack_param_impl(uint8_t* dest, uint64_t val)
         {
             constexpr size_t N = sizeof(uint64_t);
@@ -385,7 +385,7 @@ namespace tbb
             memcpy(dest, &val, N);
             return dest + N;
         }
-        
+
         inline uint8_t* pack_param_impl(uint8_t* dest, float val)
         {
             constexpr size_t N = sizeof(float);
@@ -393,7 +393,7 @@ namespace tbb
             memcpy(dest, &val, N);
             return dest + N;
         }
-        
+
         inline uint8_t* pack_param_impl(uint8_t* dest, double val)
         {
             constexpr size_t N = sizeof(double);
@@ -410,10 +410,10 @@ namespace tbb
         inline void free_msg(message* msg)
         {
             delete[] reinterpret_cast<uint8_t*>(msg);
-        }           
+        }
     }
 
-    // Utilities    
+    // Utilities
     namespace internal
     {
         // timestamp in nanoseconds
@@ -533,7 +533,30 @@ namespace tbb
             return retval;
         }
 
-        inline FILE* get_log_file(int32_t childID)
+#ifdef _WIN32
+        typedef HANDLE file_t;
+#else
+        typedef FILE* file_t;
+#endif
+
+
+
+        inline file_t open_file(const char* filename)
+        {
+#ifdef _WIN32
+            return CreateFileA(filename,
+                               GENERIC_WRITE,
+                               FILE_SHARE_READ,
+                               nullptr,
+                               CREATE_ALWAYS,
+                               FILE_ATTRIBUTE_NORMAL,
+                               nullptr);
+#else
+            return fopen(filename, "wb");
+#endif
+        }
+
+        inline file_t get_log_file(int32_t childID)
         {
             char filename[1024];
             char* head = filename;
@@ -547,9 +570,38 @@ namespace tbb
             mkdir(filename, 0777);
             sprintf(head, "/firefox%i.bin", childID);
 #endif
-            return fopen(filename, "wb");
-        }                        
+            return open_file(filename);
+        }
+
+        inline void write_file(void* buf, size_t bytes, file_t file)
+        {
+#ifdef _WIN32
+            WriteFile(file, buf, bytes, nullptr, nullptr);
+#else
+            fwrite(buf, 1, bytes, file);
+#endif
+        }
+
+        inline void flush_file(file_t file)
+        {
+#ifdef _WIN32
+            FlushFileBuffers(file);
+#else
+            fflush(file);
+#endif
+        }
+
+        inline void close_file(file_t file)
+        {
+#ifdef _WIN32
+            CloseHandle(file);
+#else
+            fclose(file);
+#endif
+        }
     }
+
+
 
     class mutex
     {
@@ -594,13 +646,28 @@ namespace tbb
         CRITICAL_SECTION cs;
 #else
         pthread_mutex_t mut;
-#endif      
+#endif
     };
 
     class logger
     {
         typedef std::vector<serialization::message*> message_queue_t;
     public:
+
+        template<size_t N, typename... ARGS>
+        static void __attribute__((noinline)) debug_log(const char* func, const char* file, uint32_t line, const char(&fmt)[N], ARGS&&... args)
+        {
+            const uint64_t timestamp = internal::get_timestamp();
+
+            auto& self = logger::get();
+
+            size_t size = serialization::msg_size(func, file, line, fmt, std::forward<ARGS>(args)...);
+            auto* msg = serialization::alloc_msg(size);
+            serialization::write_msg(msg, func, file, line, fmt, std::forward<ARGS>(args)...);
+
+            // write info about logger
+            self.enqueue_msg(msg, timestamp);
+        }
 
         template<size_t N, size_t M, size_t O, typename... ARGS>
         static void __attribute__((noinline)) log(const char (&func)[N], const char (&file)[M], uint32_t line, const char (&fmt)[O], ARGS&&... args)
@@ -692,7 +759,7 @@ namespace tbb
             internal::set_thread_name();
             // init logging file
             const int32_t childID = internal::get_child_id();
-            FILE* log_file = internal::get_log_file(childID);
+            auto log_file = internal::get_log_file(childID);
             size_t total_messages_written = 0;
             // spin until exit is signalled (unless there are remaining messages to write)
             while(!self.signal_exit || self.remaining_messages != 0)
@@ -705,7 +772,7 @@ namespace tbb
                     // write out messages to disk and free their memory
                     for(auto* msg : *queue) {
                         msg->process_id = childID;
-                        fwrite(msg, sizeof(uint8_t), msg->length, log_file);
+                        internal::write_file(msg, msg->length, log_file);
                         free_msg(msg);
                     }
 
@@ -715,7 +782,7 @@ namespace tbb
                     self.remaining_messages -= messages_written;
                     total_messages_written += messages_written;
                 }
-                fflush(log_file);
+                internal::flush_file(log_file);
 
                 // sleep for a bit rather than spinning
                 while (!self.signal_exit && self.remaining_messages == 0) {
@@ -724,8 +791,8 @@ namespace tbb
             }
 
             // flush to disk
-            fflush(log_file);
-            fclose(log_file);
+            internal::flush_file(log_file);
+            internal::close_file(log_file);
 
             return 0;
         }
@@ -740,7 +807,7 @@ namespace tbb
         HANDLE logger_thread;
 #else
         pthread_t logger_thread;
-#endif      
+#endif
     };
 }
 
