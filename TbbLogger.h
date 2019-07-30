@@ -523,14 +523,23 @@ namespace tbb
         inline int32_t get_child_id()
         {
             const char* command_line = get_command_line();
-            command_line = strstr(command_line, "-childID");
-            if (command_line == nullptr) {
+            if (strstr(command_line, "firefox"))
+            {
+                if (strstr(command_line, "-childID"))
+                {
+                    int32_t retval = -1;
+                    sscanf(command_line, "-childID %d", &retval);
+                    return retval;
+                }
                 return 0;
             }
-
-            int32_t retval = -1;
-            sscanf(command_line, "-childID %d", &retval);
-            return retval;
+            else
+            {
+                auto hash = std::hash<std::string>{}(command_line);
+                int32_t retval = (int32_t)hash;
+                if (retval > 0) retval *= -1;
+                return retval;
+            }
         }
 
 #ifdef _WIN32
@@ -538,8 +547,6 @@ namespace tbb
 #else
         typedef FILE* file_t;
 #endif
-
-
 
         inline file_t open_file(const char* filename)
         {
@@ -564,11 +571,27 @@ namespace tbb
 #if _WIN32
             head += sprintf(head, "firefox");
             CreateDirectoryA(filename, nullptr);
-            sprintf(head, "\\firefox%i.bin", childID);
+            if (childID >= 0)
+            {
+                sprintf(head, "\\firefox%i.bin", childID);
+            }
+            else
+            {
+                sprintf(head, "\\other%i.bin", -childID);
+            }
+
 #else
             head += sprintf(head, "/firefox");
             mkdir(filename, 0777);
-            sprintf(head, "/firefox%i.bin", childID);
+            if (childID >=0)
+            {
+                sprintf(head, "/firefox%i.bin", childID);
+            }
+            else
+            {
+                sprintf(head, "/other%i.bin", -childID);
+            }
+
 #endif
             return open_file(filename);
         }
