@@ -1,5 +1,5 @@
 diff --git a/dom/ipc/ContentChild.cpp b/dom/ipc/ContentChild.cpp
-index 5cee2c0fc2cd..83082e211c9b 100644
+index 7efd288ba11e..7ef64137f30a 100644
 --- a/dom/ipc/ContentChild.cpp
 +++ b/dom/ipc/ContentChild.cpp
 @@ -4,6 +4,8 @@
@@ -8,40 +8,39 @@ index 5cee2c0fc2cd..83082e211c9b 100644
  
 +#include "TbbLogger.h"
 +
- #ifdef MOZ_WIDGET_GTK
- #include <gtk/gtk.h>
+ #ifdef MOZ_WIDGET_ANDROID
+ #  include "AndroidDecoderModule.h"
  #endif
-@@ -560,5 +561,6 @@ bool ContentChild::Init(MessageLoop* aIOLoop, base::ProcessId aParentPid,
-                         IPC::Channel* aChannel, uint64_t aChildID,
+@@ -703,6 +705,7 @@ class nsGtkNativeInitRunnable : public Runnable {
+ void ContentChild::Init(base::ProcessId aParentPid, const char* aParentBuildID,
+                         mozilla::ipc::ScopedPort aPort, uint64_t aChildID,
                          bool aIsForBrowser) {
 +  TBB_LOG("Child Process {} Launch", aChildID);
  #ifdef MOZ_WIDGET_GTK
    // When running X11 only build we need to pass a display down
    // to gtk_init because it's not going to use the one from the environment
 diff --git a/security/sandbox/win/src/sandboxbroker/sandboxBroker.cpp b/security/sandbox/win/src/sandboxbroker/sandboxBroker.cpp
-index 852f535de152..2240842a6ebe 100644
+index 0f884b30c3ac..79ab59091f34 100644
 --- a/security/sandbox/win/src/sandboxbroker/sandboxBroker.cpp
 +++ b/security/sandbox/win/src/sandboxbroker/sandboxBroker.cpp
-@@ -174,7 +174,7 @@ SandboxBroker::LaunchApp(const wchar_t *aPath,
+@@ -274,7 +274,6 @@ bool SandboxBroker::LaunchApp(const wchar_t* aPath, const wchar_t* aArguments,
      ApplyLoggingPolicy();
    }
  
 -#if defined(DEBUG)
-+// #if defined(DEBUG)
    // Allow write access to TEMP directory in debug builds for logging purposes.
    // The path from GetTempPathW can have a length up to MAX_PATH + 1, including
    // the null, so we need MAX_PATH + 2, so we can add an * to the end.
-@@ -187,7 +187,7 @@ SandboxBroker::LaunchApp(const wchar_t *aPath,
+@@ -287,7 +286,6 @@ bool SandboxBroker::LaunchApp(const wchar_t* aPath, const wchar_t* aArguments,
      mPolicy->AddRule(sandbox::TargetPolicy::SUBSYS_FILES,
                       sandbox::TargetPolicy::FILES_ALLOW_ANY, tempPath);
    }
 -#endif
-+// #endif
  
    // Enable the child process to write log files when setup
-   wchar_t const* logFileName = nullptr;
+   AddMozLogRulesToPolicy(mPolicy, aEnvironment);
 diff --git a/toolkit/xre/nsAppRunner.cpp b/toolkit/xre/nsAppRunner.cpp
-index 7889919ca677..9f347092a1cd 100644
+index c5e285c7e746..128d93794f0c 100644
 --- a/toolkit/xre/nsAppRunner.cpp
 +++ b/toolkit/xre/nsAppRunner.cpp
 @@ -3,6 +3,8 @@
@@ -53,609 +52,48 @@ index 7889919ca677..9f347092a1cd 100644
  #include "mozilla/dom/ContentParent.h"
  #include "mozilla/dom/ContentChild.h"
  #include "mozilla/ipc/GeckoChildProcessHost.h"
-@@ -5163,6 +5165,7 @@ XREMain::XRE_mainRun()
+@@ -5977,6 +5979,7 @@ static already_AddRefed<nsIFile> GreOmniPath(int argc, char** argv) {
   *            .app/Contents/Resources.
   */
  int XREMain::XRE_main(int argc, char* argv[], const BootstrapConfig& aConfig) {
 +  TBB_LOG("Parent Process Launch");
-   ScopedLogging log;
+   gArgc = argc;
+   gArgv = argv;
  
-   mozilla::LogModule::Init();
-diff --git a/xpcom/build/TbbLogger.cpp b/xpcom/build/TbbLogger.cpp
+diff --git a/xpcom/build/TbbLogger.h b/xpcom/build/TbbLogger.h
 new file mode 100644
-index 000000000000..a342fd86078d
+index 000000000000..24f595247e64
 --- /dev/null
-+++ b/xpcom/build/TbbLogger.cpp
-@@ -0,0 +1,572 @@
-+#include "TbbLogger.h"
++++ b/xpcom/build/TbbLogger.h
+@@ -0,0 +1,839 @@
++#ifndef TBB_LOGGER_H
++#define TBB_LOGGER_H
 +
 +// C
-+#include <assert.h>
-+#include <wchar.h>
 +#include <stdlib.h>
 +#include <string.h>
++#include <stdint.h>
++#include <stddef.h>
++#include <stdio.h>
 +
 +// C++
 +#include <atomic>
 +#include <memory>
 +#include <vector>
 +#include <functional>
-+
-+#ifdef _WIN32
-+#include <windows.h>
-+#else
-+#include <unistd.h>
-+#include <sys/prctl.h>
-+#include <sys/stat.h>
-+#include <sys/types.h>
-+#include <sys/syscall.h>
-+#endif
-+
-+namespace tbb
-+{
-+    namespace internal
-+    {
-+        /// Utilities
-+
-+        // timestamp in nanoseconds
-+        uint64_t get_timestamp()
-+        {
-+            constexpr uint64_t NANOSECONDS_PER_SECOND = 1000000000;
-+#ifdef _WIN32
-+            static LARGE_INTEGER frequency = []()
-+            {
-+                LARGE_INTEGER frequency;
-+                QueryPerformanceFrequency(&frequency);
-+                return frequency;
-+            }();
-+
-+            LARGE_INTEGER ticks;
-+            QueryPerformanceCounter(&ticks);
-+            ticks.QuadPart *= NANOSECONDS_PER_SECOND;
-+            ticks.QuadPart /= frequency.QuadPart;
-+
-+            return ticks.QuadPart;
-+#else
-+            timespec counter;
-+            clock_gettime(CLOCK_MONOTONIC_RAW, &counter);
-+            uint64_t retval = uint64_t(counter.tv_sec) * NANOSECONDS_PER_SECOND + uint64_t(counter.tv_nsec);
-+            return retval;
-+#endif
-+        }
-+
-+        uint32_t get_thread_id()
-+        {
-+
-+#ifdef _WIN32
-+            static thread_local uint32_t thread_id = GetCurrentThreadId();
-+#else
-+            static thread_local uint32_t thread_id = syscall(SYS_gettid);
-+#endif
-+            return thread_id;
-+        }
-+
-+        void thread_yield()
-+        {
-+#ifdef _WIN32
-+            SwitchToThread();
-+#else
-+            pthread_yield();
-+#endif
-+        }
-+
-+        const char* get_command_line()
-+        {
-+#ifdef _WIN32
-+            return GetCommandLineA();
-+#else
-+            static char cmdline[2048];
-+            FILE* cmdline_file = fopen("/proc/self/cmdline", "rb");
-+            size_t len = fread(cmdline, 1, sizeof(cmdline) - 1, cmdline_file);
-+            fclose(cmdline_file);
-+            for(size_t i = 0; i < len; ++i)
-+            {
-+                cmdline[i] = (cmdline[i] == 0 ? ' ' : cmdline[i]);
-+            }
-+            cmdline[len] = 0;
-+            return cmdline;
-+#endif
-+        }
-+
-+        size_t get_temp_path(char* buffer, size_t len)
-+        {
-+#ifdef _WIN32
-+            return GetTempPathA(len, buffer);
-+#else
-+            const char tmp[] = "/tmp";
-+            memcpy(buffer, tmp, sizeof(tmp));
-+            return sizeof(tmp) - 1;
-+#endif
-+        }
-+
-+
-+        int32_t get_child_id()
-+        {
-+            const char* command_line = get_command_line();
-+            command_line = strstr(command_line, "-childID");
-+            if (command_line == nullptr) {
-+                return 0;
-+            }
-+
-+            int32_t retval = -1;
-+            sscanf(command_line, "-childID %d", &retval);
-+            return retval;
-+        }
-+
-+        FILE* get_log_file(int32_t childID)
-+        {
-+            char filename[1024];
-+            char* head = filename;
-+            head += get_temp_path(head, sizeof(filename));
-+#if _WIN32
-+            head += sprintf(head, "firefox");
-+            CreateDirectoryA(filename, nullptr);
-+            sprintf(head, "\\firefox%i.bin", childID);
-+#else
-+            head += sprintf(head, "/firefox");
-+            mkdir(filename, 0777);
-+            sprintf(head, "/firefox%i.bin", childID);
-+#endif
-+            return fopen(filename, "wb");
-+        }
-+    }
-+
-+    namespace serialization
-+    {
-+        #define NULL_STRING(PREFIX) PREFIX##"(nil)"
-+        #define UTF8_NULLSTRING   NULL_STRING(u8)
-+        #define UTF16_NULLSTRING  NULL_STRING(u)
-+        #define UTF32_NULLSTRING  NULL_STRING(U)
-+        #define WIDE_NULLSTRING  NULL_STRING(L)
-+
-+        template<typename CharType>
-+        constexpr size_t param_size_string(const CharType* str)
-+        {
-+            const auto* head = str;
-+            while(*str++ != (CharType)0);
-+            return (str - head) * sizeof(CharType) + sizeof(data_type);
-+        }
-+
-+        /// Size Params
-+        size_t param_size_impl(const char* str)
-+        {
-+            if (!str) {
-+                str = UTF8_NULLSTRING;
-+            }
-+            return param_size_string(str);
-+        }
-+        size_t param_size_impl(const char16_t* str)
-+        {
-+            if (!str) {
-+                str = UTF16_NULLSTRING;
-+            }
-+            return param_size_string(str);
-+        }
-+        size_t param_size_impl(const char32_t* str)
-+        {
-+            if (!str) {
-+                str = UTF32_NULLSTRING;
-+            }
-+            return param_size_string(str);
-+        }
-+        size_t param_size_impl(const wchar_t* str)
-+        {
-+            if (!str) {
-+                str = WIDE_NULLSTRING;
-+            }
-+            return param_size_string(str);
-+        }
-+
-+        size_t param_size(char str[])
-+        {
-+            return param_size_impl(str);
-+        }
-+        size_t param_size(char16_t str[])
-+        {
-+            return param_size_impl(str);
-+        }
-+        size_t param_size(char32_t str[])
-+        {
-+            return param_size_impl(str);
-+        }
-+        size_t param_size(wchar_t str[])
-+        {
-+            return param_size_impl(str);
-+        }
-+
-+        /// Pack Params
-+        template<typename CharType>
-+        uint8_t* pack_param_string(uint8_t* dest, const CharType* str)
-+        {
-+            static_assert((sizeof(CharType) == sizeof(char) ||
-+                           sizeof(CharType) == sizeof(char16_t) ||
-+                           sizeof(CharType) == sizeof(char32_t)), "Invalid character size");
-+            switch(sizeof(CharType))
-+            {
-+                case sizeof(char):
-+                    *dest++ = (uint8_t)data_type::utf8; break;
-+                case sizeof(char16_t):
-+                    *dest++ = (uint8_t)data_type::utf16; break;
-+                case sizeof(char32_t):
-+                    *dest++ = (uint8_t)data_type::utf32; break;
-+            }
-+            auto* str_dest = reinterpret_cast<CharType*>(dest);
-+            while((*str_dest++ = *str++));
-+            return reinterpret_cast<uint8_t*>(str_dest);
-+        }
-+
-+        // various string overloads
-+        uint8_t* pack_param_impl(uint8_t* dest, const char* str)
-+        {
-+            if (!str) {
-+                str = UTF8_NULLSTRING;
-+            }
-+            return pack_param_string(dest, str);
-+        }
-+        uint8_t* pack_param_impl(uint8_t* dest, const char16_t* str)
-+        {
-+            if (!str) {
-+                str = UTF16_NULLSTRING;
-+            }
-+            return pack_param_string(dest, str);
-+        }
-+        uint8_t* pack_param_impl(uint8_t* dest, const char32_t* str)
-+        {
-+            if (!str) {
-+                str = UTF32_NULLSTRING;
-+            }
-+            return pack_param_string(dest, str);
-+        }
-+        uint8_t* pack_param_impl(uint8_t* dest, const wchar_t* str)
-+        {
-+            if (!str) {
-+                str = WIDE_NULLSTRING;
-+            }
-+            return pack_param_string(dest, str);
-+        }
-+        uint8_t* pack_param_impl(uint8_t* dest, char str[])
-+        {
-+            return pack_param_impl(dest, (const char*)str);
-+        }
-+        uint8_t* pack_param_impl(uint8_t* dest, char16_t str[])
-+        {
-+            return pack_param_impl(dest, (const char16_t*)str);
-+        }
-+        uint8_t* pack_param_impl(uint8_t* dest, char32_t str[])
-+        {
-+            return pack_param_impl(dest, (const char32_t*)str);
-+        }
-+        uint8_t* pack_param_impl(uint8_t* dest, wchar_t str[])
-+        {
-+            return pack_param_impl(dest, (const wchar_t*)str);
-+        }
-+
-+        uint8_t* pack_param_impl(uint8_t* dest, const void* ptr)
-+        {
-+            static_assert(sizeof(void*) == sizeof(uint32_t) ||
-+                          sizeof(void*) == sizeof(uint64_t),
-+                          "Invalid pointer size");
-+
-+            constexpr size_t N = sizeof(void*);
-+            if(N == sizeof(uint32_t)) {
-+                *dest++ = (uint8_t)(data_type::p32);
-+            } else if(N == sizeof(uint64_t)) {
-+                *dest++ = (uint8_t)(data_type::p64);
-+            }
-+
-+            memcpy(dest, &ptr, N);
-+            return dest + N;
-+        }
-+        uint8_t* pack_param_impl(uint8_t* dest, void* ptr)
-+        {
-+            return pack_param_impl(dest, (const void*)ptr);
-+        }
-+        uint8_t* pack_param_impl(uint8_t* dest, std::nullptr_t)
-+        {
-+            return pack_param_impl(dest, (void*)nullptr);
-+        }
-+        uint8_t* pack_param_impl(uint8_t* dest, int8_t val)
-+        {
-+            constexpr size_t N = sizeof(int8_t);
-+            *dest++ = (uint8_t)(data_type::i8);
-+            memcpy(dest, &val, N);
-+            return dest + N;
-+        }
-+        uint8_t* pack_param_impl(uint8_t* dest, uint8_t val)
-+        {
-+            constexpr size_t N = sizeof(uint8_t);
-+            *dest++ = (uint8_t)(data_type::u8);
-+            memcpy(dest, &val, N);
-+            return dest + N;
-+        }
-+        uint8_t* pack_param_impl(uint8_t* dest, int16_t val)
-+        {
-+           constexpr size_t N = sizeof(int16_t);
-+            *dest++ = (uint8_t)(data_type::i16);
-+            memcpy(dest, &val, N);
-+            return dest + N;
-+        }
-+        uint8_t* pack_param_impl(uint8_t* dest, uint16_t val)
-+        {
-+            constexpr size_t N = sizeof(uint16_t);
-+            *dest++ = (uint8_t)(data_type::u16);
-+            memcpy(dest, &val, N);
-+            return dest + N;
-+        }
-+        uint8_t* pack_param_impl(uint8_t* dest, int32_t val)
-+        {
-+            constexpr size_t N = sizeof(int32_t);
-+            *dest++ = (uint8_t)(data_type::i32);
-+            memcpy(dest, &val, N);
-+            return dest + N;
-+        }
-+        uint8_t* pack_param_impl(uint8_t* dest, uint32_t val)
-+        {
-+            constexpr size_t N = sizeof(uint32_t);
-+            *dest++ = (uint8_t)(data_type::u32);
-+            memcpy(dest, &val, N);
-+            return dest + N;
-+        }
-+        uint8_t* pack_param_impl(uint8_t* dest, int64_t val)
-+        {
-+            constexpr size_t N = sizeof(int64_t);
-+            *dest++ = (uint8_t)(data_type::i64);
-+            memcpy(dest, &val, N);
-+            return dest + N;
-+        }
-+        uint8_t* pack_param_impl(uint8_t* dest, uint64_t val)
-+        {
-+            constexpr size_t N = sizeof(uint64_t);
-+            *dest++ = (uint8_t)(data_type::u64);
-+            memcpy(dest, &val, N);
-+            return dest + N;
-+        }
-+        uint8_t* pack_param_impl(uint8_t* dest, float val)
-+        {
-+            constexpr size_t N = sizeof(float);
-+            *dest++ = (uint8_t)(data_type::f32);
-+            memcpy(dest, &val, N);
-+            return dest + N;
-+        }
-+        uint8_t* pack_param_impl(uint8_t* dest, double val)
-+        {
-+            constexpr size_t N = sizeof(double);
-+            *dest++ = (uint8_t)(data_type::f64);
-+            memcpy(dest, &val, N);
-+            return dest + N;
-+        }
-+
-+        message* alloc_msg(size_t size)
-+        {
-+            return reinterpret_cast<message*>(new uint8_t[size]);
-+        }
-+
-+        void free_msg(message* msg)
-+        {
-+            delete[] reinterpret_cast<uint8_t*>(msg);
-+        }
-+    }
-+
-+    /// Logger Data
-+    namespace logger
-+    {
-+        typedef std::vector<serialization::message*>* message_queue;
-+#ifdef _WIN32
-+        static CRITICAL_SECTION queue_lock;
-+#else
-+        static pthread_mutex_t queue_lock;
-+#endif // _WIN32
-+
-+        static volatile message_queue producer = nullptr;
-+        static volatile message_queue consumer = nullptr;
-+
-+        void init_queue()
-+        {
-+#ifdef _WIN32
-+            InitializeCriticalSection(&queue_lock);
-+#else
-+            pthread_mutex_init(&queue_lock, nullptr);
-+#endif // _WIN32
-+            producer = new std::vector<serialization::message*>();
-+            consumer = new std::vector<serialization::message*>();
-+        }
-+
-+        void free_queue()
-+        {
-+#ifdef _WIN32
-+            DeleteCriticalSection(&queue_lock);
-+#else
-+            pthread_mutex_destroy(&queue_lock);
-+#endif // _WIN2
-+            delete producer; producer = nullptr;
-+            delete consumer; consumer = nullptr;
-+        }
-+
-+        bool push_message(message_queue q, serialization::message* msg)
-+        {
-+            assert(q != nullptr);
-+            q->push_back(msg);
-+            return true;
-+        }
-+
-+        bool try_push_message(serialization::message* msg)
-+        {
-+#ifdef _WIN32
-+            EnterCriticalSection(&queue_lock);
-+#else
-+            pthread_mutex_lock(&queue_lock);
-+#endif // _WIN32
-+
-+            producer->push_back(msg);
-+
-+#ifdef _WIN32
-+            LeaveCriticalSection(&queue_lock);
-+#else
-+            pthread_mutex_unlock(&queue_lock);
-+#endif // _WIN32
-+
-+            return true;
-+        }
-+
-+        // size_t visit_msgs(message_queue q, auto func)
-+        size_t visit_msgs(message_queue q, std::function<void(serialization::message* msg)> func)
-+        {
-+            for(auto* msg : *q) {
-+                func(msg);
-+            }
-+            size_t retval = q->size();
-+            q->clear();
-+            return retval;
-+        }
-+
-+        message_queue swap_queues()
-+        {
-+#ifdef _WIN32
-+            EnterCriticalSection(&queue_lock);
-+            std::swap(producer, consumer);
-+            LeaveCriticalSection(&queue_lock);
-+#else
-+            pthread_mutex_lock(&queue_lock);
-+            std::swap(producer, consumer);
-+            pthread_mutex_unlock(&queue_lock);
-+#endif // _WIN32
-+            return consumer;
-+        }
-+
-+        static std::atomic_size_t remaining_messages;
-+        static std::atomic_bool thread_started;
-+        static std::atomic_bool signal_exit;
-+#ifdef _WIN32
-+        static HANDLE logger_thread;
-+#else
-+        static pthread_t logger_thread;
-+#endif  // _WIN32
-+
-+#ifdef _WIN32
-+        DWORD WINAPI logger_func(void*);
-+#else
-+        void* logger_func(void*);
-+#endif  // _WIN32
-+
-+        bool logger_init()
-+        {
-+            // init queue
-+            remaining_messages.store(0);
-+            init_queue();
-+
-+            // init logger thread
-+            thread_started.store(false);
-+            signal_exit.store(false);
-+#ifdef _WIN32
-+            logger_thread = CreateThread(nullptr, 0, &logger_func, nullptr, 0, nullptr);
-+#else
-+            pthread_create(&logger_thread, nullptr, &logger_func, nullptr);
-+#endif // _WIN32
-+            // cleanup method
-+            atexit([]()
-+            {
-+                while(!thread_started) {
-+                    internal::thread_yield();
-+                }
-+                signal_exit.store(true);
-+
-+                // wait for logger to finish
-+#ifdef _WIN32
-+                WaitForSingleObject(logger_thread, INFINITE);
-+#else
-+                pthread_join(logger_thread, nullptr);
-+#endif // _WIN32
-+                free_queue();
-+            });
-+
-+            return true;
-+        }
-+
-+#ifdef _WIN32
-+        DWORD WINAPI logger_func(LPVOID)
-+#else
-+        void* logger_func(void*)
-+#endif // _WIN32
-+        {
-+            thread_started.store(true);
-+
-+            // name thread for debugging
-+#ifdef _WIN32
-+
-+#else
-+            prctl(PR_SET_NAME,"logger_func",0,0,0);
-+#endif // _WIN32
-+
-+            // init logging file
-+            int32_t childID = internal::get_child_id();
-+            FILE* log_file = internal::get_log_file(childID);
-+
-+            size_t total_messages_written = 0;
-+            // spin until exit is signalled (unless there are remaining messages to write)
-+            while(!signal_exit || remaining_messages != 0)
-+            {
-+                // repeatedly spin until message queues are empty
-+                while (remaining_messages != 0)
-+                {
-+                    auto queue = swap_queues();
-+
-+                    size_t messages_written = visit_msgs(queue,
-+                        [&](serialization::message* msg) -> void
-+                        {
-+                            msg->process_id = childID;
-+                            fwrite(msg, sizeof(uint8_t), msg->length, log_file);
-+                            free_msg(msg);
-+                        });
-+
-+                    remaining_messages -= messages_written;
-+                    total_messages_written += messages_written;
-+                }
-+                fflush(log_file);
-+            }
-+
-+            // flush to disk
-+            fflush(log_file);
-+            fclose(log_file);
-+
-+            return 0;
-+        }
-+
-+        void enqueue_msg(serialization::message* msg, uint64_t timestamp)
-+        {
-+            static bool logger_inited = logger_init();
-+            (void)logger_inited;
-+
-+            msg->timestamp = timestamp;
-+            msg->thread_id = internal::get_thread_id();
-+
-+            ++remaining_messages;
-+            while(!try_push_message(msg)) {
-+                internal::thread_yield();
-+            }
-+        }
-+    }
-+}
-\ No newline at end of file
-diff --git a/xpcom/build/TbbLogger.h b/xpcom/build/TbbLogger.h
-new file mode 100644
-index 000000000000..a9207b606085
---- /dev/null
-+++ b/xpcom/build/TbbLogger.h
-@@ -0,0 +1,179 @@
-+#ifndef TBB_LOGGER_H
-+#define TBB_LOGGER_H
-+
-+// C
-+#include <stdint.h>
-+#include <stddef.h>
-+
-+// C++
 +#include <type_traits>
 +#include <utility>
++#include <string>
++
++#ifdef _WIN32
++#   include <windows.h>
++#else
++#   include <unistd.h>
++#   include <sys/prctl.h>
++#   include <sys/stat.h>
++#   include <sys/types.h>
++#   include <sys/syscall.h>
++#endif
 +
 +#define TBB_LOG_IMPL(...) tbb::logger::log(__FUNCTION__, __FILE__, __LINE__, __VA_ARGS__)
 +
@@ -798,50 +236,684 @@ index 000000000000..a9207b606085
 +            size_t len = (size_t)(tail - head);
 +            *reinterpret_cast<uint32_t*>(head) = static_cast<uint32_t>(len);
 +        }
++
++        #define NULL_STRING(PREFIX) PREFIX##"(nil)"
++        #define UTF8_NULLSTRING   NULL_STRING(u8)
++        #define UTF16_NULLSTRING  NULL_STRING(u)
++        #define UTF32_NULLSTRING  NULL_STRING(U)
++        #define WIDE_NULLSTRING  NULL_STRING(L)
++
++        template<typename CharType>
++        constexpr size_t param_size_string(const CharType* str)
++        {
++            const auto* head = str;
++            while(*str++ != (CharType)0);
++            return (str - head) * sizeof(CharType) + sizeof(data_type);
++        }
++
++        /// Size Params
++        inline size_t param_size_impl(const char* str)
++        {
++            if (!str) {
++                str = UTF8_NULLSTRING;
++            }
++            return param_size_string(str);
++        }
++        inline size_t param_size_impl(const char16_t* str)
++        {
++            if (!str) {
++                str = UTF16_NULLSTRING;
++            }
++            return param_size_string(str);
++        }
++        inline size_t param_size_impl(const char32_t* str)
++        {
++            if (!str) {
++                str = UTF32_NULLSTRING;
++            }
++            return param_size_string(str);
++        }
++        inline size_t param_size_impl(const wchar_t* str)
++        {
++            if (!str) {
++                str = WIDE_NULLSTRING;
++            }
++            return param_size_string(str);
++        }
++
++        inline size_t param_size(char str[])
++        {
++            return param_size_impl(str);
++        }
++        inline size_t param_size(char16_t str[])
++        {
++            return param_size_impl(str);
++        }
++        inline size_t param_size(char32_t str[])
++        {
++            return param_size_impl(str);
++        }
++        inline size_t param_size(wchar_t str[])
++        {
++            return param_size_impl(str);
++        }
++
++        /// Pack Params
++        template<typename CharType>
++        uint8_t* pack_param_string(uint8_t* dest, const CharType* str)
++        {
++            static_assert((sizeof(CharType) == sizeof(char) ||
++                           sizeof(CharType) == sizeof(char16_t) ||
++                           sizeof(CharType) == sizeof(char32_t)), "Invalid character size");
++            switch(sizeof(CharType))
++            {
++                case sizeof(char):
++                    *dest++ = (uint8_t)data_type::utf8; break;
++                case sizeof(char16_t):
++                    *dest++ = (uint8_t)data_type::utf16; break;
++                case sizeof(char32_t):
++                    *dest++ = (uint8_t)data_type::utf32; break;
++            }
++            auto* str_dest = reinterpret_cast<CharType*>(dest);
++            while((*str_dest++ = *str++));
++            return reinterpret_cast<uint8_t*>(str_dest);
++        }
++
++        // various string overloads
++        inline uint8_t* pack_param_impl(uint8_t* dest, const char* str)
++        {
++            if (!str) {
++                str = UTF8_NULLSTRING;
++            }
++            return pack_param_string(dest, str);
++        }
++        inline uint8_t* pack_param_impl(uint8_t* dest, const char16_t* str)
++        {
++            if (!str) {
++                str = UTF16_NULLSTRING;
++            }
++            return pack_param_string(dest, str);
++        }
++        inline uint8_t* pack_param_impl(uint8_t* dest, const char32_t* str)
++        {
++            if (!str) {
++                str = UTF32_NULLSTRING;
++            }
++            return pack_param_string(dest, str);
++        }
++        inline uint8_t* pack_param_impl(uint8_t* dest, const wchar_t* str)
++        {
++            if (!str) {
++                str = WIDE_NULLSTRING;
++            }
++            return pack_param_string(dest, str);
++        }
++        inline uint8_t* pack_param_impl(uint8_t* dest, char str[])
++        {
++            return pack_param_impl(dest, (const char*)str);
++        }
++        inline uint8_t* pack_param_impl(uint8_t* dest, char16_t str[])
++        {
++            return pack_param_impl(dest, (const char16_t*)str);
++        }
++        inline uint8_t* pack_param_impl(uint8_t* dest, char32_t str[])
++        {
++            return pack_param_impl(dest, (const char32_t*)str);
++        }
++        inline uint8_t* pack_param_impl(uint8_t* dest, wchar_t str[])
++        {
++            return pack_param_impl(dest, (const wchar_t*)str);
++        }
++
++        inline uint8_t* pack_param_impl(uint8_t* dest, const void* ptr)
++        {
++            static_assert(sizeof(void*) == sizeof(uint32_t) ||
++                          sizeof(void*) == sizeof(uint64_t),
++                          "Invalid pointer size");
++
++            constexpr size_t N = sizeof(void*);
++            if(N == sizeof(uint32_t)) {
++                *dest++ = (uint8_t)(data_type::p32);
++            } else if(N == sizeof(uint64_t)) {
++                *dest++ = (uint8_t)(data_type::p64);
++            }
++
++            memcpy(dest, &ptr, N);
++            return dest + N;
++        }
++
++        inline uint8_t* pack_param_impl(uint8_t* dest, void* ptr)
++        {
++            return pack_param_impl(dest, (const void*)ptr);
++        }
++
++        inline uint8_t* pack_param_impl(uint8_t* dest, std::nullptr_t)
++        {
++            return pack_param_impl(dest, (void*)nullptr);
++        }
++
++        inline uint8_t* pack_param_impl(uint8_t* dest, int8_t val)
++        {
++            constexpr size_t N = sizeof(int8_t);
++            *dest++ = (uint8_t)(data_type::i8);
++            memcpy(dest, &val, N);
++            return dest + N;
++        }
++
++        inline uint8_t* pack_param_impl(uint8_t* dest, uint8_t val)
++        {
++            constexpr size_t N = sizeof(uint8_t);
++            *dest++ = (uint8_t)(data_type::u8);
++            memcpy(dest, &val, N);
++            return dest + N;
++        }
++
++        inline uint8_t* pack_param_impl(uint8_t* dest, int16_t val)
++        {
++           constexpr size_t N = sizeof(int16_t);
++            *dest++ = (uint8_t)(data_type::i16);
++            memcpy(dest, &val, N);
++            return dest + N;
++        }
++
++        inline uint8_t* pack_param_impl(uint8_t* dest, uint16_t val)
++        {
++            constexpr size_t N = sizeof(uint16_t);
++            *dest++ = (uint8_t)(data_type::u16);
++            memcpy(dest, &val, N);
++            return dest + N;
++        }
++
++        inline uint8_t* pack_param_impl(uint8_t* dest, int32_t val)
++        {
++            constexpr size_t N = sizeof(int32_t);
++            *dest++ = (uint8_t)(data_type::i32);
++            memcpy(dest, &val, N);
++            return dest + N;
++        }
++
++        inline uint8_t* pack_param_impl(uint8_t* dest, uint32_t val)
++        {
++            constexpr size_t N = sizeof(uint32_t);
++            *dest++ = (uint8_t)(data_type::u32);
++            memcpy(dest, &val, N);
++            return dest + N;
++        }
++
++        inline uint8_t* pack_param_impl(uint8_t* dest, int64_t val)
++        {
++            constexpr size_t N = sizeof(int64_t);
++            *dest++ = (uint8_t)(data_type::i64);
++            memcpy(dest, &val, N);
++            return dest + N;
++        }
++
++        inline uint8_t* pack_param_impl(uint8_t* dest, uint64_t val)
++        {
++            constexpr size_t N = sizeof(uint64_t);
++            *dest++ = (uint8_t)(data_type::u64);
++            memcpy(dest, &val, N);
++            return dest + N;
++        }
++
++        inline uint8_t* pack_param_impl(uint8_t* dest, float val)
++        {
++            constexpr size_t N = sizeof(float);
++            *dest++ = (uint8_t)(data_type::f32);
++            memcpy(dest, &val, N);
++            return dest + N;
++        }
++
++        inline uint8_t* pack_param_impl(uint8_t* dest, double val)
++        {
++            constexpr size_t N = sizeof(double);
++            *dest++ = (uint8_t)(data_type::f64);
++            memcpy(dest, &val, N);
++            return dest + N;
++        }
++
++        inline message* alloc_msg(size_t size)
++        {
++            return reinterpret_cast<message*>(new uint8_t[size]);
++        }
++
++        inline void free_msg(message* msg)
++        {
++            delete[] reinterpret_cast<uint8_t*>(msg);
++        }
 +    }
 +
++    // Utilities
 +    namespace internal
 +    {
-+        uint64_t get_timestamp();
++        // timestamp in nanoseconds
++        inline uint64_t get_timestamp()
++        {
++            constexpr uint64_t NANOSECONDS_PER_SECOND = 1000000000;
++#ifdef _WIN32
++            static LARGE_INTEGER frequency = []()
++            {
++                LARGE_INTEGER frequency;
++                QueryPerformanceFrequency(&frequency);
++                return frequency;
++            }();
++
++            LARGE_INTEGER ticks;
++            QueryPerformanceCounter(&ticks);
++            ticks.QuadPart *= NANOSECONDS_PER_SECOND;
++            ticks.QuadPart /= frequency.QuadPart;
++
++            return ticks.QuadPart;
++#else
++            timespec counter;
++            clock_gettime(CLOCK_MONOTONIC_RAW, &counter);
++            uint64_t retval = uint64_t(counter.tv_sec) * NANOSECONDS_PER_SECOND + uint64_t(counter.tv_nsec);
++            return retval;
++#endif
++        }
++
++        inline uint32_t get_thread_id()
++        {
++
++#ifdef _WIN32
++            static thread_local uint32_t thread_id = GetCurrentThreadId();
++#else
++            static thread_local uint32_t thread_id = syscall(SYS_gettid);
++#endif
++            return thread_id;
++        }
++
++        inline void thread_yield()
++        {
++#ifdef _WIN32
++            SwitchToThread();
++#else
++            pthread_yield();
++#endif
++        }
++
++        inline void thread_sleep(size_t milliseconds)
++        {
++#ifdef _WIN32
++            Sleep(milliseconds);
++#else
++            const auto microseconds = milliseconds * 1000;
++            usleep(microseconds);
++#endif
++        }
++
++        inline void set_thread_name()
++        {
++#ifdef _WIN32
++            // only works on Win10  and up :(
++            typedef HRESULT (WINAPI *SetThreadDescription_t)(HANDLE,PCWSTR);
++            SetThreadDescription_t SetThreadDescription =
++                (SetThreadDescription_t)GetProcAddress(
++                    GetModuleHandle(TEXT("kernel32.dll")),
++                    "SetThreadDescription");
++
++            if(SetThreadDescription != nullptr)
++            {
++                SetThreadDescription(GetCurrentThread(), L"tbblogger_thread");
++            }
++#else
++            prctl(PR_SET_NAME,"tbblogger_thread",0,0,0);
++#endif // _WIN32
++        }
++
++        inline const char* get_command_line()
++        {
++#ifdef _WIN32
++            return GetCommandLineA();
++#else
++            static char cmdline[2048];
++            FILE* cmdline_file = fopen("/proc/self/cmdline", "rb");
++            size_t len = fread(cmdline, 1, sizeof(cmdline) - 1, cmdline_file);
++            fclose(cmdline_file);
++            for(size_t i = 0; i < len; ++i)
++            {
++                cmdline[i] = (cmdline[i] == 0 ? ' ' : cmdline[i]);
++            }
++            cmdline[len] = 0;
++            return cmdline;
++#endif
++        }
++
++        inline size_t get_temp_path(char* buffer, size_t len)
++        {
++#ifdef _WIN32
++            return GetTempPathA(len, buffer);
++#else
++            const char tmp[] = "/tmp";
++            memcpy(buffer, tmp, sizeof(tmp));
++            return sizeof(tmp) - 1;
++#endif
++        }
++
++        inline int32_t get_child_id()
++        {
++            const char* command_line = get_command_line();
++            if (strstr(command_line, "firefox"))
++            {
++                if (strstr(command_line, "-childID"))
++                {
++                    int32_t retval = -1;
++                    sscanf(command_line, "-childID %d", &retval);
++                    return retval;
++                }
++                return 0;
++            }
++            else
++            {
++                auto hash = std::hash<std::string>{}(command_line);
++                int32_t retval = (int32_t)hash;
++                if (retval > 0) retval *= -1;
++                return retval;
++            }
++        }
++
++#ifdef _WIN32
++        typedef HANDLE file_t;
++#else
++        typedef FILE* file_t;
++#endif
++
++        inline file_t open_file(const char* filename)
++        {
++#ifdef _WIN32
++            return CreateFileA(filename,
++                               GENERIC_WRITE,
++                               FILE_SHARE_READ,
++                               nullptr,
++                               CREATE_ALWAYS,
++                               FILE_ATTRIBUTE_NORMAL,
++                               nullptr);
++#else
++            return fopen(filename, "wb");
++#endif
++        }
++
++        inline file_t get_log_file(int32_t childID)
++        {
++            char filename[1024];
++            char* head = filename;
++            head += get_temp_path(head, sizeof(filename));
++#if _WIN32
++            head += sprintf(head, "firefox");
++            CreateDirectoryA(filename, nullptr);
++            if (childID >= 0)
++            {
++                sprintf(head, "\\firefox%i.bin", childID);
++            }
++            else
++            {
++                sprintf(head, "\\other%i.bin", -childID);
++            }
++
++#else
++            head += sprintf(head, "/firefox");
++            mkdir(filename, 0777);
++            if (childID >=0)
++            {
++                sprintf(head, "/firefox%i.bin", childID);
++            }
++            else
++            {
++                sprintf(head, "/other%i.bin", -childID);
++            }
++
++#endif
++            return open_file(filename);
++        }
++
++        inline void write_file(void* buf, size_t bytes, file_t file)
++        {
++#ifdef _WIN32
++            WriteFile(file, buf, bytes, nullptr, nullptr);
++#else
++            fwrite(buf, 1, bytes, file);
++#endif
++        }
++
++        inline void flush_file(file_t file)
++        {
++#ifdef _WIN32
++            FlushFileBuffers(file);
++#else
++            fflush(file);
++#endif
++        }
++
++        inline void close_file(file_t file)
++        {
++#ifdef _WIN32
++            CloseHandle(file);
++#else
++            fclose(file);
++#endif
++        }
 +    }
 +
-+    namespace logger
-+    {
-+        void enqueue_msg(serialization::message* msg, uint64_t timestamp);
 +
-+        template<size_t N, size_t M, size_t O, typename... ARGS>
-+        void __attribute__((noinline)) log(const char (&func)[N], const char (&file)[M], uint32_t line, const char (&fmt)[O], ARGS&&... args)
++
++    class mutex
++    {
++    public:
++        mutex()
++        {
++#ifdef _WIN32
++            InitializeCriticalSection(&cs);
++#else
++            pthread_mutex_init(&mut, nullptr);
++#endif
++        }
++
++        ~mutex()
++        {
++#ifdef _WIN32
++            DeleteCriticalSection(&cs);
++#else
++            pthread_mutex_destroy(&mut);
++#endif
++        }
++
++        void lock()
++        {
++#ifdef _WIN32
++            EnterCriticalSection(&cs);
++#else
++            pthread_mutex_lock(&mut);
++#endif
++        }
++
++        void unlock()
++        {
++#ifdef _WIN32
++            LeaveCriticalSection(&cs);
++#else
++            pthread_mutex_unlock(&mut);
++#endif
++        }
++    private:
++#ifdef _WIN32
++        CRITICAL_SECTION cs;
++#else
++        pthread_mutex_t mut;
++#endif
++    };
++
++    class logger
++    {
++        typedef std::vector<serialization::message*> message_queue_t;
++    public:
++
++        template<size_t N, typename... ARGS>
++        static void __attribute__((noinline)) debug_log(const char* func, const char* file, uint32_t line, const char(&fmt)[N], ARGS&&... args)
 +        {
 +            const uint64_t timestamp = internal::get_timestamp();
++
++            auto& self = logger::get();
 +
 +            size_t size = serialization::msg_size(func, file, line, fmt, std::forward<ARGS>(args)...);
 +            auto* msg = serialization::alloc_msg(size);
 +            serialization::write_msg(msg, func, file, line, fmt, std::forward<ARGS>(args)...);
 +
 +            // write info about logger
-+            logger::enqueue_msg(msg, timestamp);
++            self.enqueue_msg(msg, timestamp);
 +        }
-+    }
++
++        template<size_t N, size_t M, size_t O, typename... ARGS>
++        static void __attribute__((noinline)) log(const char (&func)[N], const char (&file)[M], uint32_t line, const char (&fmt)[O], ARGS&&... args)
++        {
++            const uint64_t timestamp = internal::get_timestamp();
++
++            auto& self = logger::get();
++
++            size_t size = serialization::msg_size(func, file, line, fmt, std::forward<ARGS>(args)...);
++            auto* msg = serialization::alloc_msg(size);
++            serialization::write_msg(msg, func, file, line, fmt, std::forward<ARGS>(args)...);
++
++            // write info about logger
++            self.enqueue_msg(msg, timestamp);
++        }
++
++    private:
++
++        void enqueue_msg(serialization::message* msg, uint64_t timestamp)
++        {
++            msg->timestamp= timestamp;
++            msg->thread_id = internal::get_thread_id();
++
++            ++remaining_messages;
++            queue_lock.lock();
++            producer->push_back(msg);
++            queue_lock.unlock();
++        }
++
++        message_queue_t* swap_queues()
++        {
++            queue_lock.lock();
++            std::swap(producer, consumer);
++            queue_lock.unlock();
++
++            return consumer.get();
++        }
++
++        ~logger()
++        {
++            while(!thread_started) {
++                internal::thread_yield();
++            }
++            signal_exit.store(true);
++
++            // wait for logger to finish
++#ifdef _WIN32
++            WaitForSingleObject(logger_thread, INFINITE);
++#else
++            pthread_join(logger_thread, nullptr);
++#endif // _WIN32
++        }
++
++        /// Constructor
++        logger()
++        {
++            producer.reset(new message_queue_t());
++            consumer.reset(new message_queue_t());
++
++            remaining_messages.store(0);
++            thread_started.store(false);
++            signal_exit.store(false);
++
++#ifdef _WIN32
++            logger_thread = CreateThread(nullptr, 0, &logger::logger_func, nullptr, 0, nullptr);
++#else
++            pthread_create(&this->logger_thread, nullptr, &logger::logger_func, nullptr);
++#endif
++        }
++
++        // Getter
++        static logger& get()
++        {
++            static logger retval;
++            return retval;
++        }
++
++        // Thread Func
++#ifdef _WIN32
++        static DWORD WINAPI logger_func(LPVOID)
++#else
++        static void* logger_func(void*)
++#endif
++        {
++            auto& self = logger::get();
++            self.thread_started.store(true);
++
++            // name thread for debugging
++            internal::set_thread_name();
++            // init logging file
++            const int32_t childID = internal::get_child_id();
++            auto log_file = internal::get_log_file(childID);
++            size_t total_messages_written = 0;
++            // spin until exit is signalled (unless there are remaining messages to write)
++            while(!self.signal_exit || self.remaining_messages != 0)
++            {
++                // repeatedly spin until message queues are empty
++                while (self.remaining_messages != 0)
++                {
++                    auto queue = self.swap_queues();
++
++                    // write out messages to disk and free their memory
++                    for(auto* msg : *queue) {
++                        msg->process_id = childID;
++                        internal::write_file(msg, msg->length, log_file);
++                        free_msg(msg);
++                    }
++
++                    const auto messages_written = queue->size();
++                    queue->clear();
++
++                    self.remaining_messages -= messages_written;
++                    total_messages_written += messages_written;
++                }
++                internal::flush_file(log_file);
++
++                // sleep for a bit rather than spinning
++                while (!self.signal_exit && self.remaining_messages == 0) {
++                    internal::thread_sleep(20);
++                }
++            }
++
++            // flush to disk
++            internal::flush_file(log_file);
++            internal::close_file(log_file);
++
++            return 0;
++        }
++
++        mutex queue_lock;
++        std::unique_ptr<message_queue_t> producer;
++        std::unique_ptr<message_queue_t> consumer;
++        std::atomic_size_t remaining_messages;
++        std::atomic_bool thread_started;
++        std::atomic_bool signal_exit;
++#ifdef _WIN32
++        HANDLE logger_thread;
++#else
++        pthread_t logger_thread;
++#endif
++    };
 +}
 +
 +#endif // TBB_LOGGER_H
 diff --git a/xpcom/build/moz.build b/xpcom/build/moz.build
-index 1e7eb4e555e1..ba2072ced0bd 100755
+index d86af97cfe0e..885d642fbc30 100755
 --- a/xpcom/build/moz.build
 +++ b/xpcom/build/moz.build
 @@ -9,6 +9,7 @@ EXPORTS += [
-     'nsXPCOMCID.h',
-     'nsXPCOMCIDInternal.h',
-     'nsXULAppAPI.h',
-+    'TbbLogger.h',
-     'XREChildData.h',
-     'xrecore.h',
-     'XREShellData.h',
-@@ -57,6 +58,7 @@ UNIFIED_SOURCES += [
-     'LateWriteChecks.cpp',
-     'MainThreadIOLogger.cpp',
-     'Omnijar.cpp',
-+    'TbbLogger.cpp',
-     'XPCOMInit.cpp',
- ]
- 
+     "nsXPCOMCID.h",
+     "nsXPCOMCIDInternal.h",
+     "nsXULAppAPI.h",
++    "TbbLogger.h",
+     "XREChildData.h",
+     "xrecore.h",
+     "XREShellData.h",
