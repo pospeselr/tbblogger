@@ -223,7 +223,7 @@ struct fmt_param
     fmt_param(fmt_param&& that)
     {
         ::memcpy(this, &that, sizeof(that));
-        ::memset(&that, 0x00, sizeof(that));
+        new(&that) fmt_param();
     }
 
     ~fmt_param()

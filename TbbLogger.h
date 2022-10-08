@@ -6,6 +6,7 @@
 #include <string.h>
 #include <stdint.h>
 #include <stddef.h>
+#include <stdio.h>
 
 // C++
 #include <atomic>
@@ -14,15 +15,16 @@
 #include <functional>
 #include <type_traits>
 #include <utility>
+#include <string>
 
 #ifdef _WIN32
-#include <windows.h>
+#   include <windows.h>
 #else
-#include <unistd.h>
-#include <sys/prctl.h>
-#include <sys/stat.h>
-#include <sys/types.h>
-#include <sys/syscall.h>
+#   include <unistd.h>
+#   include <sys/prctl.h>
+#   include <sys/stat.h>
+#   include <sys/types.h>
+#   include <sys/syscall.h>
 #endif
 
 #define TBB_LOG_IMPL(...) tbb::logger::log(__FUNCTION__, __FILE__, __LINE__, __VA_ARGS__)
