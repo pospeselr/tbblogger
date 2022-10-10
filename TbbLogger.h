@@ -527,10 +527,10 @@ namespace tbb
             const char* command_line = get_command_line();
             if (strstr(command_line, "firefox"))
             {
-                if (strstr(command_line, "-childID"))
+                if (auto childIDStart = strstr(command_line, "-childID"); childIDStart != nullptr)
                 {
                     int32_t retval = -1;
-                    sscanf(command_line, "-childID %d", &retval);
+                    sscanf(childIDStart, "-childID %d", &retval);
                     return retval;
                 }
                 return 0;
