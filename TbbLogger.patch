@@ -62,7 +62,7 @@ index c5e285c7e746..128d93794f0c 100644
  
 diff --git a/xpcom/build/TbbLogger.h b/xpcom/build/TbbLogger.h
 new file mode 100644
-index 000000000000..24f595247e64
+index 000000000000..f1fe6e2ceb2a
 --- /dev/null
 +++ b/xpcom/build/TbbLogger.h
 @@ -0,0 +1,839 @@
@@ -595,10 +595,10 @@ index 000000000000..24f595247e64
 +            const char* command_line = get_command_line();
 +            if (strstr(command_line, "firefox"))
 +            {
-+                if (strstr(command_line, "-childID"))
++                if (auto childIDStart = strstr(command_line, "-childID"); childIDStart != nullptr)
 +                {
 +                    int32_t retval = -1;
-+                    sscanf(command_line, "-childID %d", &retval);
++                    sscanf(childIDStart, "-childID %d", &retval);
 +                    return retval;
 +                }
 +                return 0;
